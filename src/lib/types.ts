@@ -5,17 +5,15 @@ export interface Video {
   publishedAt: string;
 }
 
-export interface SubTasks {
-  watchVideo: boolean;
-  programPractice: boolean;
-  postLinkedIn: boolean;
-  updateNaukri: boolean;
+export interface SubTask {
+  id: string;
+  label: string;
+  completed: boolean;
 }
 
 export interface TaskRecord {
   videoId: string;
-  subtasks: SubTasks;
-  diaryNote: string;
+  subtasks: SubTask[];
   completedAt?: string; // ISO date string if all subtasks are completed
 }
 

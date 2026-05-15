@@ -332,6 +332,44 @@ input::placeholder, textarea::placeholder {
   text-decoration: line-through;
 }
 
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--border-radius-xs);
+  transition: background 0.2s ease;
+}
+
+.checklist-item:hover {
+  background: var(--bg-surface-2);
+}
+
+.delete-btn {
+  padding: 6px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+
+.checklist-item:hover .delete-btn {
+  opacity: 0.5;
+}
+
+.delete-btn:hover {
+  opacity: 1 !important;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-radius: 6px;
+}
+
 /* ── Custom Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

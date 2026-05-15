@@ -6,20 +6,20 @@ import { fetchPlaylistVideos } from '@/lib/youtube';
 import { AppData, Video, TaskRecord } from '@/lib/types';
 import { 
   PlayCircle, CheckCircle2, ChevronDown, 
-  Share2, Save, ListTodo, Code2, Users, Briefcase,
-  TrendingUp, Award, Clock, Zap
+  ListTodo, Code2, Users, Briefcase,
+  TrendingUp, Award, Clock, Zap, Flame, Trophy, Target, ExternalLink, Trash2
 } from 'lucide-react';
 
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-const SUBTASK_META = [
-  { key: 'watchVideo' as keyof TaskRecord['subtasks'], label: 'Watch Module', icon: PlayCircle },
-  { key: 'programPractice' as keyof TaskRecord['subtasks'], label: 'Code Practice', icon: Code2 },
-  { key: 'postLinkedIn' as keyof TaskRecord['subtasks'], label: 'Community Post', icon: Users },
-  { key: 'updateNaukri' as keyof TaskRecord['subtasks'], label: 'Profile Update', icon: Briefcase },
-];
+const DEFAULT_ICONS: Record<string, any> = {
+  watchVideo: PlayCircle,
+  programPractice: Code2,
+  postLinkedIn: Users,
+  updateNaukri: Briefcase,
+};
 
 const containerVariants = {
   hidden: {},
@@ -246,35 +246,81 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleSubtaskToggle = (videoId: string, taskKey: keyof TaskRecord['subtasks']) => {
+  const handleSubtaskToggle = (videoId: string, subtaskId: string) => {
     if (!data) return;
-    const currentTask = data.tasks[videoId] || { subtasks: { watchVideo: false, programPractice: false, postLinkedIn: false, updateNaukri: false } };
-    const updated = updateTask(videoId, {
-      subtasks: {
-        ...currentTask.subtasks,
-        [taskKey]: !currentTask.subtasks[taskKey]
-      }
+    const currentTask = data.tasks[videoId] || { videoId, subtasks: [] };
+    const updatedSubtasks = currentTask.subtasks.map(s => 
+      s.id === subtaskId ? { ...s, completed: !s.completed } : s
+    );
+    const updated = updateTask(videoId, { subtasks: updatedSubtasks });
+    setData(updated);
+  };
+
+  const handleAddSubtask = (videoId: string, label: string) => {
+    if (!data || !label.trim()) return;
+    const currentTask = data.tasks[videoId] || { videoId, subtasks: [] };
+    const newSubtask = {
+      id: `custom-${Date.now()}`,
+      label,
+      completed: false
+    };
+    const updated = updateTask(videoId, { 
+      subtasks: [...currentTask.subtasks, newSubtask] 
     });
+    setData(updated);
+  };
+
+  const handleDeleteSubtask = (videoId: string, subtaskId: string) => {
+    if (!data) return;
+    const currentTask = data.tasks[videoId];
+    if (!currentTask) return;
+    const updatedSubtasks = currentTask.subtasks.filter(s => s.id !== subtaskId);
+    const updated = updateTask(videoId, { subtasks: updatedSubtasks });
     setData(updated);
   };
 
   const handleDiaryChange = (videoId: string, content: string) => {
-    if (!data) return;
-    const updated = updateTask(videoId, { diaryNote: content });
-    setData(updated);
+    // No-op - feature removed
   };
 
   const stats = useMemo(() => {
-    if (!data || videos.length === 0) return { completed: 0, total: 0, progress: 0 };
+    if (!data || videos.length === 0) return { completed: 0, total: 0, progress: 0, streak: 0 };
     let completed = 0;
+    const completionDates = new Set<string>();
+
     videos.forEach(v => {
       const t = data.tasks[v.id];
-      if (t && t.completedAt) completed++;
+      if (t && t.completedAt) {
+        completed++;
+        completionDates.add(new Date(t.completedAt).toDateString());
+      }
     });
+
+    // Calculate streak
+    let streak = 0;
+    const today = new Date();
+    const checkDate = new Date();
+    
+    // Check if anything done today or yesterday to continue streak
+    const doneToday = completionDates.has(today.toDateString());
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const doneYesterday = completionDates.has(yesterday.toDateString());
+
+    if (doneToday || doneYesterday) {
+      if (!doneToday) checkDate.setDate(checkDate.getDate() - 1);
+      
+      while (completionDates.has(checkDate.toDateString())) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+    }
+
     return {
       completed,
       total: videos.length,
-      progress: Math.round((completed / videos.length) * 100) || 0
+      progress: Math.round((completed / videos.length) * 100) || 0,
+      streak
     };
   }, [data, videos]);
 
@@ -317,7 +363,7 @@ export default function Home() {
   }
 
   return (
-    <main className="container">
+    <main className="container" style={{ paddingBottom: '6rem' }}>
       {/* ── Header ── */}
       <motion.header
         initial={{ opacity: 0, y: -16 }}
@@ -420,7 +466,17 @@ export default function Home() {
             variants={sidebarVariants}
             initial="hidden"
             animate="visible"
-            style={{ position: 'sticky', top: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            style={{ 
+              position: 'sticky', 
+              top: '2rem', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '1rem',
+              maxHeight: 'calc(100vh - 4rem)',
+              overflowY: 'auto',
+              paddingRight: '0.5rem',
+              scrollbarWidth: 'none',
+            }}
           >
 
             {/* Progress Card */}
@@ -466,7 +522,7 @@ export default function Home() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem' }}>
                 {[
                   { label: 'Done', value: stats.completed, icon: CheckCircle2, color: 'var(--accent-success)', bg: 'var(--accent-success-light)' },
-                  { label: 'Left', value: stats.total - stats.completed, icon: Clock, color: 'var(--accent-primary)', bg: 'var(--accent-light)' },
+                  { label: 'Streak', value: `${stats.streak}d`, icon: Flame, color: '#f97316', bg: 'rgba(249, 115, 22, 0.1)' },
                 ].map(({ label, value, icon: Icon, color, bg }) => (
                   <div key={label} style={{
                     background: bg,
@@ -479,6 +535,43 @@ export default function Home() {
                       <span style={{ fontSize: '0.6875rem', fontFamily: 'var(--font-mono)', color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
                     </div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Achievements Section */}
+            <div className="card" style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <Trophy style={{ width: 16, height: 16, color: 'var(--accent-primary)' }} />
+                <span style={{ fontSize: '0.8125rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Milestones
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {[
+                  { label: 'First Step', desc: 'Complete 1 module', icon: Target, unlocked: stats.completed >= 1 },
+                  { label: 'Consistent', desc: '3 day streak', icon: Flame, unlocked: stats.streak >= 3 },
+                  { label: 'Halfway', desc: '50% completion', icon: Award, unlocked: stats.progress >= 50 },
+                ].map((a, i) => (
+                  <div key={i} style={{ 
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    opacity: a.unlocked ? 1 : 0.4,
+                    filter: a.unlocked ? 'none' : 'grayscale(1)',
+                    transition: 'all 0.3s ease'
+                  }}>
+                    <div style={{ 
+                      width: 32, height: 32, borderRadius: 8, 
+                      background: a.unlocked ? 'var(--gradient-accent)' : 'var(--bg-surface-2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: a.unlocked ? '0 4px 12px rgba(99, 102, 241, 0.2)' : 'none'
+                    }}>
+                      <a.icon style={{ width: 16, height: 16, color: a.unlocked ? 'white' : 'var(--text-muted)' }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{a.label}</div>
+                      <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>{a.desc}</div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -510,12 +603,12 @@ export default function Home() {
           >
             {videos.map((video, index) => {
               const task = data.tasks[video.id] || {
-                subtasks: { watchVideo: false, programPractice: false, postLinkedIn: false, updateNaukri: false },
-                diaryNote: ''
+                subtasks: []
               };
               const isExpanded = expandedVideoId === video.id;
               const isCompleted = task.completedAt !== undefined;
-              const subtaskCount = Object.values(task.subtasks).filter(Boolean).length;
+              const subtaskCount = task.subtasks.filter(s => s.completed).length;
+              const totalSubtasks = task.subtasks.length;
 
               return (
                 <motion.div
@@ -558,18 +651,15 @@ export default function Home() {
                         </h3>
                         {/* Sub-task pips */}
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          {SUBTASK_META.map(({ key }) => {
-                            const done = task.subtasks[key];
-                            return (
-                              <div key={key} style={{
-                                width: 6, height: 6, borderRadius: '50%',
-                                background: done ? 'var(--accent-primary)' : 'var(--border-color-strong)',
-                                transition: 'background 0.2s ease',
-                              }} />
-                            );
-                          })}
+                          {task.subtasks.map((s) => (
+                            <div key={s.id} style={{
+                              width: 6, height: 6, borderRadius: '50%',
+                              background: s.completed ? 'var(--accent-primary)' : 'var(--border-color-strong)',
+                              transition: 'background 0.2s ease',
+                            }} />
+                          ))}
                           <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 4 }}>
-                            {subtaskCount}/4
+                            {subtaskCount}/{totalSubtasks}
                           </span>
                         </div>
                       </div>
@@ -609,140 +699,112 @@ export default function Home() {
                         <div style={{
                           borderTop: '1px solid var(--border-color)',
                           padding: '1.375rem',
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1.5fr',
+                          display: 'flex',
+                          flexDirection: 'column',
                           gap: '1.5rem',
                         }}>
-                          {/* Subtasks & Thumbnail */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                            {/* Video Thumbnail */}
-                            {video.thumbnailUrl && (
-                              <div>
-                                <motion.a
-                                  href={`https://www.youtube.com/watch?v=${video.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{
-                                    display: 'block', position: 'relative', borderRadius: 8,
-                                    overflow: 'hidden', border: '1px solid var(--border-color)', cursor: 'pointer'
-                                  }}
-                                  initial="initial"
-                                  whileHover="hover"
-                                >
-                                  <img 
-                                    src={video.thumbnailUrl} 
-                                    alt={video.title} 
-                                    style={{ width: '100%', height: 'auto', display: 'block', aspectRatio: '16/9', objectFit: 'cover' }} 
-                                  />
-                                  <motion.div
-                                    variants={{ initial: { opacity: 0 }, hover: { opacity: 1 } }}
-                                    transition={{ duration: 0.2 }}
-                                    style={{
-                                      position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
-                                      justifyContent: 'center', background: 'rgba(0,0,0,0.5)'
-                                    }}
-                                  >
-                                    <motion.div 
-                                      variants={{ initial: { scale: 0.8 }, hover: { scale: 1 } }}
-                                      transition={{ duration: 0.2, ease: "easeOut" }}
-                                      style={{
-                                        width: 48, height: 48, borderRadius: '50%', background: 'var(--gradient-accent)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                                        boxShadow: '0 4px 24px rgba(99, 102, 241, 0.5)'
-                                      }}
-                                    >
-                                      <PlayCircle style={{ width: 24, height: 24, fill: 'currentColor', marginLeft: 2 }} />
-                                    </motion.div>
-                                  </motion.div>
-                                </motion.a>
-                              </div>
-                            )}
+                          {/* Video Player */}
+                          <div style={{ width: '100%', aspectRatio: '16/9', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-color)', background: '#000' }}>
+                            <iframe
+                              width="100%"
+                              height="100%"
+                              src={`https://www.youtube.com/embed/${video.id}`}
+                              title="YouTube video player"
+                              frameBorder="0"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              allowFullScreen
+                            ></iframe>
+                          </div>
 
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                            {/* Checklist */}
+                            <div>
+                                <p style={{
+                                fontSize: '0.6875rem', fontFamily: 'var(--font-mono)',
+                                textTransform: 'uppercase', letterSpacing: '0.07em',
+                                color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.75rem',
+                              }}>
+                                Execution Checklist
+                              </p>
+                              <div className="flex flex-col" style={{ gap: '0.125rem' }}>
+                                {task.subtasks.map((s) => {
+                                  const Icon = DEFAULT_ICONS[s.id] || ListTodo;
+                                  return (
+                                    <div key={s.id} className="checklist-item">
+                                      <label className="checkbox-wrapper" style={{ flex: 1, background: 'transparent' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={s.completed}
+                                          onChange={() => handleSubtaskToggle(video.id, s.id)}
+                                        />
+                                        <span className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}>
+                                          <Icon style={{ width: 14, height: 14, opacity: 0.8, flexShrink: 0 }} />
+                                          {s.label}
+                                        </span>
+                                      </label>
+                                      <button 
+                                        className="delete-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteSubtask(video.id, s.id);
+                                        }}
+                                        title="Delete task"
+                                      >
+                                        <Trash2 style={{ width: 14, height: 14 }} />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Add Item Actions */}
                             <div>
                               <p style={{
-                              fontSize: '0.6875rem', fontFamily: 'var(--font-mono)',
-                              textTransform: 'uppercase', letterSpacing: '0.07em',
-                              color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.75rem',
-                            }}>
-                              Execution Checklist
-                            </p>
-                            <div className="flex flex-col" style={{ gap: '0.125rem' }}>
-                              {SUBTASK_META.map(({ key, label, icon: Icon }) => (
-                                <label key={key} className="checkbox-wrapper">
-                                  <input
-                                    type="checkbox"
-                                    checked={task.subtasks[key]}
-                                    onChange={() => handleSubtaskToggle(video.id, key)}
+                                fontSize: '0.6875rem', fontFamily: 'var(--font-mono)',
+                                textTransform: 'uppercase', letterSpacing: '0.07em',
+                                color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.75rem',
+                              }}>
+                                Custom Actions
+                              </p>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                  <input 
+                                    id={`new-task-${video.id}`}
+                                    type="text" 
+                                    placeholder="Add custom task..." 
+                                    style={{ flex: 1, fontSize: '0.8125rem', padding: '0.5rem 0.75rem' }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleAddSubtask(video.id, e.currentTarget.value);
+                                        e.currentTarget.value = '';
+                                      }
+                                    }}
                                   />
-                                  <span className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}>
-                                    <Icon style={{ width: 14, height: 14, opacity: 0.8, flexShrink: 0 }} />
-                                    {label}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Notes & Export */}
-                          <div>
-                            <p style={{
-                              fontSize: '0.6875rem', fontFamily: 'var(--font-mono)',
-                              textTransform: 'uppercase', letterSpacing: '0.07em',
-                              color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.75rem',
-                            }}>
-                              Technical Log
-                            </p>
-                            <textarea
-                              placeholder="Document key insights, concepts, and code snippets you learned…"
-                              value={task.diaryNote || ''}
-                              onChange={(e) => handleDiaryChange(video.id, e.target.value)}
-                              style={{ minHeight: 110, fontSize: '0.875rem' }}
-                            />
-
-                            {task.diaryNote && (
-                              <motion.div
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3 }}
-                                style={{
-                                  marginTop: '0.875rem',
-                                  padding: '1rem',
-                                  background: 'var(--bg-surface-2)',
-                                  border: '1px solid var(--border-color)',
-                                  borderRadius: 12,
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.625rem' }}>
-                                  <Share2 style={{ width: 14, height: 14, color: 'var(--accent-primary)' }} />
-                                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-                                    LinkedIn Snippet
-                                  </span>
+                                  <button 
+                                    className="btn-primary"
+                                    style={{ padding: '0 1rem' }}
+                                    onClick={() => {
+                                      const input = document.getElementById(`new-task-${video.id}`) as HTMLInputElement;
+                                      handleAddSubtask(video.id, input.value);
+                                      input.value = '';
+                                    }}
+                                  >
+                                    Add
+                                  </button>
                                 </div>
-                                <p style={{
-                                  fontSize: '0.8rem',
-                                  color: 'var(--text-secondary)',
-                                  whiteSpace: 'pre-wrap',
-                                  fontFamily: 'var(--font-mono)',
-                                  marginBottom: '0.875rem',
-                                  lineHeight: 1.65,
-                                }}>
-                                  {`🚀 Day ${index + 1} of #100xDevs — module complete!\n\nKey takeaways:\n${task.diaryNote}\n\n#WebDevelopment #Engineering #LearningInPublic`}
-                                </p>
-                                <button
+                                <a 
+                                  href={`https://www.youtube.com/watch?v=${video.id}`} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
                                   className="btn-outline w-full"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(
-                                      `🚀 Day ${index + 1} of #100xDevs — module complete!\n\nKey takeaways:\n${task.diaryNote}\n\n#WebDevelopment #Engineering #LearningInPublic`
-                                    );
-                                    alert('Copied to clipboard!');
-                                  }}
+                                  style={{ justifyContent: 'space-between', marginTop: '0.5rem' }}
                                 >
-                                  <Save style={{ width: 13, height: 13 }} />
-                                  Copy to Clipboard
-                                </button>
-                              </motion.div>
-                            )}
+                                  <span>Watch on YouTube</span>
+                                  <ExternalLink style={{ width: 13, height: 13 }} />
+                                </a>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </motion.div>
