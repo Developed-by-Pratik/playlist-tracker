@@ -41,8 +41,26 @@ export const fetchPlaylistVideos = async (): Promise<Video[]> => {
       nextPageToken = data.nextPageToken;
     } while (nextPageToken);
     
-    // Filter out deleted/private videos which usually have title 'Private video' or 'Deleted video'
-    return allVideos.filter(v => v.title !== 'Private video' && v.title !== 'Deleted video');
+    // Filter out deleted/private videos
+    const validVideos = allVideos.filter(v => v.title !== 'Private video' && v.title !== 'Deleted video');
+
+    // Fetch durations in batches of 50
+    const videoIds = validVideos.map(v => v.id);
+    for (let i = 0; i < videoIds.length; i += 50) {
+      const batch = videoIds.slice(i, i + 50).join(',');
+      const durResponse = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${apiKey}`
+      );
+      if (durResponse.ok) {
+        const durData = await durResponse.json();
+        durData.items.forEach((item: any) => {
+          const video = validVideos.find(v => v.id === item.id);
+          if (video) video.duration = item.contentDetails.duration;
+        });
+      }
+    }
+
+    return validVideos;
   } catch (error) {
     console.error('Error fetching YouTube playlist:', error);
     throw error;

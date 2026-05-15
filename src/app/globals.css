@@ -132,9 +132,42 @@ code {
 
 /* Layout */
 .container {
-  max-width: 1200px;
+  max-width: 1300px;
   margin: 0 auto;
-  padding: 2.5rem 2rem 5rem;
+  padding: 2rem 1.5rem;
+}
+
+/* ── Responsive Grid ── */
+.main-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.main-grid > * {
+  min-width: 0;
+}
+
+/* Stacking threshold */
+@media (max-width: 1050px) {
+  .main-grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  
+  aside {
+    position: static !important;
+    max-height: none !important;
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 1200px) and (min-width: 1051px) {
+  .main-grid {
+    grid-template-columns: 300px 1fr;
+    gap: 1.5rem;
+  }
 }
 
 /* ── Cards ── */
@@ -142,11 +175,16 @@ code {
   background: var(--bg-surface-solid);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  padding: 1.75rem;
+  padding: 1.5rem;
   box-shadow: var(--shadow-sm);
   transition: transform 0.2s ease, border-color 0.2s ease;
   position: relative;
   overflow: hidden;
+  container-type: inline-size;
+}
+
+.sidebar-card {
+  padding: 1.125rem !important;
 }
 
 /* Subtle gradient shimmer on cards */

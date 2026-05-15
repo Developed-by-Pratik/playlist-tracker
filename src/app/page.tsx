@@ -13,6 +13,17 @@ import {
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useRef } from 'react';
+
+// Helper to parse ISO 8601 duration
+const parseISODuration = (duration: string) => {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  const hours = parseInt(match[1] || '0');
+  const minutes = parseInt(match[2] || '0');
+  const seconds = parseInt(match[3] || '0');
+  return hours * 3600 + minutes * 60 + seconds;
+};
 
 const DEFAULT_ICONS: Record<string, any> = {
   watchVideo: PlayCircle,
@@ -20,6 +31,13 @@ const DEFAULT_ICONS: Record<string, any> = {
   postLinkedIn: Users,
   updateNaukri: Briefcase,
 };
+
+const DEFAULT_SUBTASKS = [
+  { id: 'watchVideo', label: 'Watch Module', completed: false },
+  { id: 'programPractice', label: 'Code Practice', completed: false },
+  { id: 'postLinkedIn', label: 'Community Post', completed: false },
+  { id: 'updateNaukri', label: 'Profile Update', completed: false },
+];
 
 const containerVariants = {
   hidden: {},
@@ -51,8 +69,8 @@ type ChartPoint = { date: string; count: number };
 
 function GrowthChart({ data }: { data: ChartPoint[] }) {
   const W = 248;
-  const H = 130;
-  const PAD = { top: 14, right: 8, bottom: 28, left: 8 };
+  const H = 140;
+  const PAD = { top: 20, right: 15, bottom: 30, left: 15 };
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
 
@@ -60,7 +78,9 @@ function GrowthChart({ data }: { data: ChartPoint[] }) {
 
   // Map data points to SVG coords
   const pts = data.map((d, i) => ({
-    x: PAD.left + (i / Math.max(data.length - 1, 1)) * innerW,
+    x: data.length === 1 
+      ? PAD.left + innerW / 2 
+      : PAD.left + (i / Math.max(data.length - 1, 1)) * innerW,
     y: PAD.top + innerH - (d.count / maxVal) * innerH,
     count: d.count,
     date: d.date,
@@ -68,7 +88,7 @@ function GrowthChart({ data }: { data: ChartPoint[] }) {
 
   // Build smooth polyline path using cardinal spline (catmull-rom)
   const linePath = pts.length < 2
-    ? `M${pts[0]?.x ?? 0},${pts[0]?.y ?? 0}`
+    ? ''
     : pts.reduce((acc, p, i) => {
         if (i === 0) return `M${p.x},${p.y}`;
         const prev = pts[i - 1];
@@ -86,7 +106,7 @@ function GrowthChart({ data }: { data: ChartPoint[] }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
 
   return (
-    <div className="card" style={{ padding: '1.25rem' }}>
+    <div className="card sidebar-card" style={{ padding: '1.25rem' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -108,12 +128,15 @@ function GrowthChart({ data }: { data: ChartPoint[] }) {
 
       {/* SVG chart */}
       <div style={{ position: 'relative' }}>
-        <svg
-          width="100%"
-          viewBox={`0 0 ${W} ${H}`}
-          style={{ overflow: 'visible', display: 'block' }}
-          onMouseLeave={() => setTooltip(null)}
-        >
+        <div style={{ width: '100%', aspectRatio: '248/140' }}>
+          <svg
+            width="100%"
+            height="100%"
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ overflow: 'visible', display: 'block' }}
+            onMouseLeave={() => setTooltip(null)}
+          >
           <defs>
             {/* One gradient per segment between consecutive points */}
             {pts.slice(0, -1).map((p, i) => {
@@ -172,7 +195,7 @@ function GrowthChart({ data }: { data: ChartPoint[] }) {
           {pts.map((p, i) => (
             <circle
               key={i}
-              cx={p.x} cy={p.y} r={4}
+              cx={p.x} cy={p.y} r={W < 200 ? 3 : 4}
               fill="var(--bg-surface-solid)"
               stroke={getColor(p.count)}
               strokeWidth={2}
@@ -213,6 +236,7 @@ function GrowthChart({ data }: { data: ChartPoint[] }) {
             </g>
           )}
         </svg>
+        </div>
       </div>
     </div>
   );
@@ -223,6 +247,8 @@ export default function Home() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
+  const [sessionCount, setSessionCount] = useState(0);
+  const iframeRefs = useRef<Record<string, HTMLIFrameElement | null>>({});
 
   const loadVideos = async () => {
     await Promise.resolve(); // Ensure all state updates happen after mount/render to avoid cascading render warning
@@ -248,8 +274,12 @@ export default function Home() {
 
   const handleSubtaskToggle = (videoId: string, subtaskId: string) => {
     if (!data) return;
-    const currentTask = data.tasks[videoId] || { videoId, subtasks: [] };
-    const updatedSubtasks = currentTask.subtasks.map(s => 
+    const currentTask = data.tasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+    
+    // Ensure subtasks are initialized if we're using the defaults for the first time
+    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+
+    const updatedSubtasks = subtasksToUse.map(s => 
       s.id === subtaskId ? { ...s, completed: !s.completed } : s
     );
     const updated = updateTask(videoId, { subtasks: updatedSubtasks });
@@ -258,14 +288,17 @@ export default function Home() {
 
   const handleAddSubtask = (videoId: string, label: string) => {
     if (!data || !label.trim()) return;
-    const currentTask = data.tasks[videoId] || { videoId, subtasks: [] };
+    const currentTask = data.tasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+    
+    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+
     const newSubtask = {
       id: `custom-${Date.now()}`,
       label,
       completed: false
     };
     const updated = updateTask(videoId, { 
-      subtasks: [...currentTask.subtasks, newSubtask] 
+      subtasks: [...subtasksToUse, newSubtask] 
     });
     setData(updated);
   };
@@ -281,6 +314,19 @@ export default function Home() {
 
   const handleDiaryChange = (videoId: string, content: string) => {
     // No-op - feature removed
+  };
+
+  const handlePomodoroStateChange = (state: 'focus' | 'break' | 'idle') => {
+    if (state === 'break') {
+      // Pause all active iframes
+      Object.values(iframeRefs.current).forEach(iframe => {
+        if (iframe) {
+          iframe.contentWindow?.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+        }
+      });
+      // Increment session count on break (meaning focus is done)
+      setSessionCount(prev => prev + 1);
+    }
   };
 
   const stats = useMemo(() => {
@@ -455,12 +501,7 @@ export default function Home() {
       )}
 
       {!loading && videos.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '300px 1fr',
-          gap: '1.75rem',
-          alignItems: 'start',
-        }}>
+        <div className="main-grid">
           {/* ── Sticky Sidebar ── */}
           <motion.aside
             variants={sidebarVariants}
@@ -480,7 +521,7 @@ export default function Home() {
           >
 
             {/* Progress Card */}
-            <div className="card" style={{ padding: '1.5rem' }}>
+            <div className="card sidebar-card">
               {/* Circular-style progress */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
                 <div style={{ position: 'relative', width: 64, height: 64, flexShrink: 0 }}>
@@ -519,7 +560,7 @@ export default function Home() {
               </div>
 
               {/* Stat pills */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.625rem' }}>
                 {[
                   { label: 'Done', value: stats.completed, icon: CheckCircle2, color: 'var(--accent-success)', bg: 'var(--accent-success-light)' },
                   { label: 'Streak', value: `${stats.streak}d`, icon: Flame, color: '#f97316', bg: 'rgba(249, 115, 22, 0.1)' },
@@ -527,21 +568,24 @@ export default function Home() {
                   <div key={label} style={{
                     background: bg,
                     borderRadius: 10,
-                    padding: '0.75rem',
-                    display: 'flex', flexDirection: 'column', gap: 4,
+                    padding: '0.625rem 0.75rem',
+                    display: 'flex', flexDirection: 'column', gap: 2,
+                    flex: '1 1 100px',
+                    minWidth: 0,
+                    overflow: 'hidden'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <Icon style={{ width: 13, height: 13, color }} />
-                      <span style={{ fontSize: '0.6875rem', fontFamily: 'var(--font-mono)', color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Icon style={{ width: 12, height: 12, color }} />
+                      <span style={{ fontSize: '0.625rem', fontFamily: 'var(--font-mono)', color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{label}</span>
                     </div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{value}</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>{value}</div>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Achievements Section */}
-            <div className="card" style={{ padding: '1.25rem' }}>
+            <div className="card sidebar-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
                 <Trophy style={{ width: 16, height: 16, color: 'var(--accent-primary)' }} />
                 <span style={{ fontSize: '0.8125rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
@@ -581,7 +625,7 @@ export default function Home() {
             {chartData.length > 0 ? (
               <GrowthChart data={chartData} />
             ) : (
-              <div className="card" style={{ padding: '1.25rem', textAlign: 'center' }}>
+              <div className="card sidebar-card" style={{ textAlign: 'center' }}>
                 <Award style={{ width: 28, height: 28, color: 'var(--text-muted)', margin: '0 auto 0.5rem' }} />
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0 }}>
                   Complete a module to see your growth chart.
@@ -589,26 +633,52 @@ export default function Home() {
               </div>
             )}
 
+            {/* Session History Card */}
+            <div className="card sidebar-card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <Clock style={{ width: 16, height: 16, color: 'var(--accent-primary)' }} />
+                <span style={{ fontSize: '0.8125rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Today's Focus
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
+                <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>
+                  {sessionCount}
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', paddingBottom: '0.2rem' }}>
+                  sessions completed
+                </div>
+              </div>
+              <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+                Each session brings you closer to your goal. Keep shipping! 🚀
+              </p>
+            </div>
+
             {/* Pomodoro Timer Widget */}
-            <PomodoroTimer />
+            <PomodoroTimer 
+              onStateChange={handlePomodoroStateChange} 
+            />
           </motion.aside>
 
-          {/* ── Video Task List ── */}
           <motion.div
             className="flex flex-col"
-            style={{ gap: '0.75rem' }}
+            style={{ gap: '0.75rem', width: '100%', minWidth: 0 }}
             variants={containerVariants}
             initial="hidden"
             animate="visible"
           >
             {videos.map((video, index) => {
-              const task = data.tasks[video.id] || {
-                subtasks: []
-              };
+              const task = data.tasks[video.id] || { subtasks: [] };
+              
+              // Ensure default subtasks exist if not already present
+              const displaySubtasks = task.subtasks.length > 0 
+                ? task.subtasks 
+                : DEFAULT_SUBTASKS;
+
               const isExpanded = expandedVideoId === video.id;
               const isCompleted = task.completedAt !== undefined;
-              const subtaskCount = task.subtasks.filter(s => s.completed).length;
-              const totalSubtasks = task.subtasks.length;
+              const subtaskCount = displaySubtasks.filter(s => s.completed).length;
+              const totalSubtasks = displaySubtasks.length;
 
               return (
                 <motion.div
@@ -651,7 +721,7 @@ export default function Home() {
                         </h3>
                         {/* Sub-task pips */}
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          {task.subtasks.map((s) => (
+                          {displaySubtasks.map((s) => (
                             <div key={s.id} style={{
                               width: 6, height: 6, borderRadius: '50%',
                               background: s.completed ? 'var(--accent-primary)' : 'var(--border-color-strong)',
@@ -706,15 +776,32 @@ export default function Home() {
                           {/* Video Player */}
                           <div style={{ width: '100%', aspectRatio: '16/9', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-color)', background: '#000' }}>
                             <iframe
+                              ref={el => { iframeRefs.current[video.id] = el; }}
                               width="100%"
                               height="100%"
-                              src={`https://www.youtube.com/embed/${video.id}`}
+                              src={`https://www.youtube.com/embed/${video.id}?enablejsapi=1`}
                               title="YouTube video player"
                               frameBorder="0"
                               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                               allowFullScreen
                             ></iframe>
                           </div>
+
+                          {video.duration && (
+                            <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-color)' }}>
+                              <div style={{ padding: 8, borderRadius: '50%', background: 'var(--accent-primary-light)' }}>
+                                <Zap style={{ width: 14, height: 14, color: 'var(--accent-primary)' }} />
+                              </div>
+                              <div>
+                                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                                  Progress Prediction
+                                </p>
+                                <p style={{ fontSize: '0.625rem', color: 'var(--text-muted)', margin: 0 }}>
+                                  A 50m session will cover approx. <b>{Math.min(100, Math.round((50 * 60 / parseISODuration(video.duration)) * 100))}%</b> of this module.
+                                </p>
+                              </div>
+                            </div>
+                          )}
 
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                             {/* Checklist */}
@@ -727,7 +814,7 @@ export default function Home() {
                                 Execution Checklist
                               </p>
                               <div className="flex flex-col" style={{ gap: '0.125rem' }}>
-                                {task.subtasks.map((s) => {
+                                {displaySubtasks.map((s) => {
                                   const Icon = DEFAULT_ICONS[s.id] || ListTodo;
                                   return (
                                     <div key={s.id} className="checklist-item">

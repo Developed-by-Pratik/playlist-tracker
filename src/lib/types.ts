@@ -3,6 +3,7 @@ export interface Video {
   title: string;
   thumbnailUrl: string;
   publishedAt: string;
+  duration?: string; // ISO 8601 duration
 }
 
 export interface SubTask {
