@@ -29,11 +29,15 @@ export default function CustomCursor() {
         style={{
           pointerEvents: "none",
           position: "fixed",
-          inset: 0,
+          top: -300,
+          left: -300,
+          width: 600,
+          height: 600,
+          background: "radial-gradient(circle, rgba(37, 99, 235, 0.08), transparent 80%)",
           zIndex: -1,
-        }}
-        animate={{
-          background: `radial-gradient(600px circle at ${mouseX.get()}px ${mouseY.get()}px, rgba(37, 99, 235, 0.07), transparent 80%)`,
+          x: mouseX,
+          y: mouseY,
+          willChange: "transform",
         }}
       />
 

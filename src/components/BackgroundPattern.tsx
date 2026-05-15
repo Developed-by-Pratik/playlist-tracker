@@ -29,9 +29,10 @@ export default function BackgroundPattern() {
           width: '55%',
           height: '55%',
           background: isDark 
-            ? 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0.05) 40%, transparent 70%)'
-            : 'radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0.02) 40%, transparent 70%)',
-          filter: 'blur(80px)',
+            ? 'radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, rgba(99, 102, 241, 0.04) 40%, transparent 70%)'
+            : 'radial-gradient(circle, rgba(99, 102, 241, 0.06) 0%, rgba(99, 102, 241, 0.01) 40%, transparent 70%)',
+          filter: 'blur(60px)',
+          willChange: 'transform',
         }}
       />
 
@@ -54,9 +55,10 @@ export default function BackgroundPattern() {
           width: '50%',
           height: '50%',
           background: isDark
-            ? 'radial-gradient(circle, rgba(52, 211, 153, 0.08) 0%, rgba(52, 211, 153, 0.03) 40%, transparent 70%)'
-            : 'radial-gradient(circle, rgba(52, 211, 153, 0.04) 0%, rgba(52, 211, 153, 0.01) 40%, transparent 70%)',
-          filter: 'blur(90px)',
+            ? 'radial-gradient(circle, rgba(52, 211, 153, 0.06) 0%, rgba(52, 211, 153, 0.02) 40%, transparent 70%)'
+            : 'radial-gradient(circle, rgba(52, 211, 153, 0.03) 0%, rgba(52, 211, 153, 0.01) 40%, transparent 70%)',
+          filter: 'blur(60px)',
+          willChange: 'transform',
         }}
       />
 
@@ -78,9 +80,10 @@ export default function BackgroundPattern() {
           width: '35%',
           height: '35%',
           background: isDark
-            ? 'radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%)'
-            : 'radial-gradient(circle, rgba(139, 92, 246, 0.05) 0%, transparent 70%)',
-          filter: 'blur(100px)',
+            ? 'radial-gradient(circle, rgba(139, 92, 246, 0.08) 0%, transparent 70%)'
+            : 'radial-gradient(circle, rgba(139, 92, 246, 0.04) 0%, transparent 70%)',
+          filter: 'blur(70px)',
+          willChange: 'transform',
         }}
       />
 
@@ -103,9 +106,10 @@ export default function BackgroundPattern() {
           width: '30%',
           height: '30%',
           background: isDark
-            ? 'radial-gradient(circle, rgba(251, 191, 36, 0.06) 0%, transparent 70%)'
-            : 'radial-gradient(circle, rgba(251, 191, 36, 0.03) 0%, transparent 70%)',
-          filter: 'blur(100px)',
+            ? 'radial-gradient(circle, rgba(251, 191, 36, 0.04) 0%, transparent 70%)'
+            : 'radial-gradient(circle, rgba(251, 191, 36, 0.02) 0%, transparent 70%)',
+          filter: 'blur(70px)',
+          willChange: 'transform',
         }}
       />
 
