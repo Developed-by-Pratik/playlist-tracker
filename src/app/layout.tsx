@@ -18,10 +18,8 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <ThemeProvider>
-          <SmoothScrollLayout>
-            <BackgroundPattern />
-            {children}
-          </SmoothScrollLayout>
+          <BackgroundPattern />
+          {children}
         </ThemeProvider>
       </body>
     </html>
