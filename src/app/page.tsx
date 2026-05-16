@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
-import { loadData, updateTask } from '@/lib/storage';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { loadData, updateTask, saveData } from '@/lib/storage';
 import { fetchPlaylistVideos } from '@/lib/youtube';
 import { AppData, Video, TaskRecord } from '@/lib/types';
 import { 
@@ -13,7 +13,9 @@ import {
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { useRef } from 'react';
+import { SyncStatusBadge } from '@/components/CloudSyncButton';
+import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus } from '@/lib/cloud-storage';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 // Helper to parse ISO 8601 duration
 const parseISODuration = (duration: string) => {
@@ -248,13 +250,44 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
+  const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(
+    isSupabaseConfigured() ? 'idle' : 'unconfigured'
+  );
   const iframeRefs = useRef<Record<string, HTMLIFrameElement | null>>({});
+  // Track whether the latest data write came from a remote update (to avoid re-syncing loops)
+  const isRemoteUpdate = useRef(false);
 
   const loadVideos = async () => {
-    await Promise.resolve(); // Ensure all state updates happen after mount/render to avoid cascading render warning
-    const loaded = loadData();
-    setData(loaded);
+    await Promise.resolve();
+
+    // 1. Show local data instantly (cache)
+    const local = loadData();
+    setData(local);
     setLoading(true);
+
+    // 2. Try to load from cloud (source of truth)
+    if (isSupabaseConfigured()) {
+      setSyncStatus('syncing');
+      try {
+        const cloud = await loadFromCloud();
+        if (cloud) {
+          // Merge: cloud wins, but persist locally
+          localStorage.setItem('playlist_tracker_data', JSON.stringify(cloud));
+          setData(cloud);
+          setSyncStatus('synced');
+          setTimeout(() => setSyncStatus('idle'), 2000);
+        } else {
+          // No cloud record yet — push local data up
+          setSyncStatus('idle');
+        }
+      } catch (e) {
+        console.warn('[cloud-sync] initial load failed', e);
+        setSyncStatus('error');
+        setTimeout(() => setSyncStatus('idle'), 4000);
+      }
+    }
+
+    // 3. Fetch videos
     try {
       const vids = await fetchPlaylistVideos();
       setVideos(vids);
@@ -265,10 +298,21 @@ export default function Home() {
     setLoading(false);
   };
 
+  // Subscribe to real-time changes from other devices
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadVideos();
-    }, 0);
+    const unsubscribe = subscribeToCloudChanges((remoteData) => {
+      isRemoteUpdate.current = true;
+      localStorage.setItem('playlist_tracker_data', JSON.stringify(remoteData));
+      setData(remoteData);
+      setSyncStatus('synced');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+      isRemoteUpdate.current = false;
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { loadVideos(); }, 0);
     return () => clearTimeout(timer);
   }, []);
 
@@ -470,6 +514,7 @@ export default function Home() {
               {stats.progress}% Complete
             </div>
           )}
+          <SyncStatusBadge status={syncStatus} />
           <ThemeToggle />
         </div>
       </motion.header>
