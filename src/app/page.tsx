@@ -417,8 +417,10 @@ export default function Home() {
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: '1rem',
           marginBottom: '2.5rem',
           paddingBottom: '1.75rem',
           borderBottom: '1px solid var(--border-color)',
@@ -513,10 +515,7 @@ export default function Home() {
               display: 'flex', 
               flexDirection: 'column', 
               gap: '1rem',
-              maxHeight: 'calc(100vh - 4rem)',
-              overflowY: 'auto',
               paddingRight: '0.5rem',
-              scrollbarWidth: 'none',
             }}
           >
 
@@ -803,9 +802,9 @@ export default function Home() {
                             </div>
                           )}
 
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem' }}>
                             {/* Checklist */}
-                            <div>
+                            <div style={{ flex: '1 1 300px', minWidth: 0 }}>
                                 <p style={{
                                 fontSize: '0.6875rem', fontFamily: 'var(--font-mono)',
                                 textTransform: 'uppercase', letterSpacing: '0.07em',
@@ -846,7 +845,7 @@ export default function Home() {
                             </div>
 
                             {/* Add Item Actions */}
-                            <div>
+                            <div style={{ flex: '1 1 300px', minWidth: 0 }}>
                               <p style={{
                                 fontSize: '0.6875rem', fontFamily: 'var(--font-mono)',
                                 textTransform: 'uppercase', letterSpacing: '0.07em',
