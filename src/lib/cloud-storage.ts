@@ -54,6 +54,23 @@ export async function loadFromCloud(): Promise<AppData | null> {
   return data.data as AppData;
 }
 
+/** 
+ * Merges remote data into local data.
+ * Strategy: Remote tasks override local ones, but we keep any local tasks 
+ * that aren't in the cloud yet.
+ */
+export function mergeData(local: AppData, remote: AppData): AppData {
+  return {
+    ...remote,
+    tasks: {
+      ...local.tasks,
+      ...remote.tasks,
+    },
+    // Keep settings from remote as they are usually API keys/etc
+    settings: remote.settings || local.settings,
+  };
+}
+
 let activeChannel: RealtimeChannel | null = null;
 
 /**

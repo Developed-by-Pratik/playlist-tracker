@@ -1,10 +1,11 @@
 "use server";
 
 import { Video } from './types';
+import { unstable_cache } from 'next/cache';
 
-const PLAYLIST_ID = 'PLQEaRBV9gAFsR15tNo2QLF9d2qc-c018p'; // 100xDevs or specified playlist
+const PLAYLIST_ID = 'PLQEaRBV9gAFsR15tNo2QLF9d2qc-c018p';
 
-export const fetchPlaylistVideos = async (): Promise<Video[]> => {
+const fetchVideosRaw = async (): Promise<Video[]> => {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) return [];
   
@@ -66,3 +67,9 @@ export const fetchPlaylistVideos = async (): Promise<Video[]> => {
     throw error;
   }
 };
+
+export const fetchPlaylistVideos = unstable_cache(
+  async () => fetchVideosRaw(),
+  ['youtube-playlist-videos'],
+  { revalidate: 3600, tags: ['youtube'] }
+);
