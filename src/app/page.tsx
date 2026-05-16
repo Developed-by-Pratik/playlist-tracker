@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { loadData, updateTask } from '@/lib/storage';
 import { fetchPlaylistVideos } from '@/lib/youtube';
 import { AppData, Video } from '@/lib/types';
-import { PlayCircle, Code2, Users, Briefcase, Zap } from 'lucide-react';
+import { PlayCircle, Code2, Users, Briefcase, Zap, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // New Components
@@ -57,8 +57,15 @@ export default function Home() {
     isSupabaseConfigured() ? 'idle' : 'unconfigured'
   );
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const isRemoteUpdate = useRef(false);
+
+  useEffect(() => {
+    const handleScroll = () => setShowScrollTop(window.scrollY > 400);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const loadInitialData = async () => {
     const local = loadData();
@@ -197,6 +204,7 @@ export default function Home() {
   if (!data || (loading && videos.length === 0)) return <SkeletonLoader />;
 
   return (
+    <>
     <main className="container" style={{ paddingBottom: '6rem' }}>
       <SyncHeader 
         loading={loading} 
@@ -256,5 +264,26 @@ export default function Home() {
         </motion.div>
       </div>
     </main>
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.5, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.5, y: 20 }}
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="btn-primary"
+            style={{
+              position: 'fixed', bottom: '2rem', right: '2rem',
+              width: 48, height: 48, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 8px 30px rgba(99, 102, 241, 0.4)',
+              zIndex: 100, padding: 0
+            }}
+          >
+            <ChevronUp style={{ width: 20, height: 20 }} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

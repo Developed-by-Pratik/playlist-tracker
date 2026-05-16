@@ -3,6 +3,7 @@ import "./globals.css";
 import SmoothScrollLayout from "@/components/SmoothScrollLayout";
 import BackgroundPattern from "@/components/BackgroundPattern";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import CustomCursor from "@/components/CustomCursor";
 
 export const metadata: Metadata = {
   title: "100xDevs Tracker",
@@ -19,7 +20,10 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <BackgroundPattern />
-          {children}
+          <CustomCursor />
+          <SmoothScrollLayout>
+            {children}
+          </SmoothScrollLayout>
         </ThemeProvider>
       </body>
     </html>
