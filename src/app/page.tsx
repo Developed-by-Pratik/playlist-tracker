@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { loadData, updateTask } from '@/lib/storage';
 import { fetchPlaylistVideos } from '@/lib/youtube';
 import { AppData, Video } from '@/lib/types';
-import { PlayCircle, Code2, Users, Briefcase } from 'lucide-react';
+import { PlayCircle, Code2, Users, Briefcase, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // New Components
@@ -56,6 +56,7 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(
     isSupabaseConfigured() ? 'idle' : 'unconfigured'
   );
+  const [hideCompleted, setHideCompleted] = useState(false);
 
   const isRemoteUpdate = useRef(false);
 
@@ -185,6 +186,14 @@ export default function Home() {
       .map(([date, count]) => ({ date, count }));
   }, [data]);
 
+  const filteredVideos = useMemo(() => {
+    if (!hideCompleted || !data) return videos;
+    return videos.filter(v => {
+      const task = data.tasks[v.id];
+      return !task || !task.completedAt;
+    });
+  }, [videos, hideCompleted, data]);
+
   if (!data || (loading && videos.length === 0)) return <SkeletonLoader />;
 
   return (
@@ -193,6 +202,8 @@ export default function Home() {
         loading={loading} 
         progress={stats.progress} 
         syncStatus={syncStatus} 
+        hideCompleted={hideCompleted}
+        onToggleHideCompleted={() => setHideCompleted(!hideCompleted)}
       />
 
       <div className="main-grid">
@@ -212,22 +223,36 @@ export default function Home() {
           initial="hidden"
           animate="visible"
         >
-          {videos.map((video, index) => (
-            <VideoCard 
-              key={video.id}
-              video={video}
-              index={index}
-              task={data.tasks[video.id] || { videoId: video.id, subtasks: [] }}
-              isExpanded={expandedVideoId === video.id}
-              onToggleExpand={() => setExpandedVideoId(expandedVideoId === video.id ? null : video.id)}
-              onSubtaskToggle={handleSubtaskToggle}
-              onAddSubtask={handleAddSubtask}
-              onDeleteSubtask={handleDeleteSubtask}
-              defaultSubtasks={DEFAULT_SUBTASKS}
-              icons={DEFAULT_ICONS}
-              parseISODuration={parseISODuration}
-            />
-          ))}
+          {filteredVideos.map((video, index) => {
+            const originalIndex = videos.findIndex(v => v.id === video.id);
+            return (
+              <VideoCard 
+                key={video.id}
+                video={video}
+                index={originalIndex}
+                task={data.tasks[video.id] || { videoId: video.id, subtasks: [] }}
+                isExpanded={expandedVideoId === video.id}
+                onToggleExpand={() => setExpandedVideoId(expandedVideoId === video.id ? null : video.id)}
+                onSubtaskToggle={handleSubtaskToggle}
+                onAddSubtask={handleAddSubtask}
+                onDeleteSubtask={handleDeleteSubtask}
+                defaultSubtasks={DEFAULT_SUBTASKS}
+                icons={DEFAULT_ICONS}
+                parseISODuration={parseISODuration}
+              />
+            );
+          })}
+          {filteredVideos.length === 0 && !loading && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              style={{ textAlign: 'center', padding: '4rem 2rem', background: 'var(--bg-surface-2)', borderRadius: 20, border: '1px dashed var(--border-color)' }}
+            >
+              <Zap style={{ width: 40, height: 40, color: 'var(--accent-primary)', margin: '0 auto 1rem', opacity: 0.5 }} />
+              <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.125rem' }}>All Modules Completed!</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>You've finished everything in your current view. Disable "Hide Done" to see all modules.</p>
+            </motion.div>
+          )}
         </motion.div>
       </div>
     </main>

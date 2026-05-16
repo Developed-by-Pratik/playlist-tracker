@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ListTodo, Zap } from 'lucide-react';
+import { ListTodo, Zap, Eye, EyeOff } from 'lucide-react';
 import { SyncStatusBadge } from '@/components/CloudSyncButton';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { CloudSyncStatus } from '@/lib/cloud-storage';
@@ -10,9 +10,13 @@ interface SyncHeaderProps {
   loading: boolean;
   progress: number;
   syncStatus: CloudSyncStatus;
+  hideCompleted: boolean;
+  onToggleHideCompleted: () => void;
 }
 
-export function SyncHeader({ loading, progress, syncStatus }: SyncHeaderProps) {
+export function SyncHeader({ 
+  loading, progress, syncStatus, hideCompleted, onToggleHideCompleted 
+}: SyncHeaderProps) {
   return (
     <motion.header
       initial={{ opacity: 0, y: -16 }}
@@ -46,18 +50,36 @@ export function SyncHeader({ loading, progress, syncStatus }: SyncHeaderProps) {
 
       <div className="flex items-center gap-4">
         {!loading && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            background: progress === 100 ? 'var(--accent-success-light)' : 'var(--accent-light)',
-            color: progress === 100 ? 'var(--accent-success)' : 'var(--accent-hover)',
-            padding: '0.375rem 0.875rem', borderRadius: 99,
-            fontSize: '0.8125rem', fontWeight: 600, fontFamily: 'var(--font-mono)',
-            border: `1px solid ${progress === 100 ? 'rgba(52, 211, 153, 0.2)' : 'rgba(99, 102, 241, 0.2)'}`,
-            boxShadow: progress === 100 ? '0 0 12px rgba(52, 211, 153, 0.15)' : '0 0 12px rgba(99, 102, 241, 0.15)',
-          }}>
-            <Zap style={{ width: 13, height: 13 }} />
-            {progress}% Complete
-          </div>
+          <>
+            <button
+              onClick={onToggleHideCompleted}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 34, height: 34,
+                background: hideCompleted ? 'var(--accent-primary)' : 'var(--bg-surface-2)',
+                color: hideCompleted ? 'white' : 'var(--text-secondary)',
+                borderRadius: '50%',
+                border: '1px solid var(--border-color)',
+                cursor: 'pointer', transition: 'all 0.2s ease',
+              }}
+              title={hideCompleted ? "Show Completed" : "Hide Completed"}
+            >
+              {hideCompleted ? <Eye style={{ width: 15, height: 15 }} /> : <EyeOff style={{ width: 15, height: 15 }} />}
+            </button>
+
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              background: progress === 100 ? 'var(--accent-success-light)' : 'var(--accent-light)',
+              color: progress === 100 ? 'var(--accent-success)' : 'var(--accent-hover)',
+              padding: '0.375rem 0.875rem', borderRadius: 99,
+              fontSize: '0.8125rem', fontWeight: 600, fontFamily: 'var(--font-mono)',
+              border: `1px solid ${progress === 100 ? 'rgba(52, 211, 153, 0.2)' : 'rgba(99, 102, 241, 0.2)'}`,
+              boxShadow: progress === 100 ? '0 0 12px rgba(52, 211, 153, 0.15)' : '0 0 12px rgba(99, 102, 241, 0.15)',
+            }}>
+              <Zap style={{ width: 13, height: 13 }} />
+              {progress}%
+            </div>
+          </>
         )}
         <SyncStatusBadge status={syncStatus} />
         <ThemeToggle />
