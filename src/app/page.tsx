@@ -181,16 +181,52 @@ export default function Home() {
 
   const chartData = useMemo(() => {
     if (!data) return [];
-    const countsByDate: Record<string, number> = {};
+
+    // Map from ISO date string (YYYY-MM-DD) -> { label, count }
+    const countsByDateKey: Record<string, { label: string; count: number }> = {};
+
+    const toKey = (d: Date) => d.toISOString().slice(0, 10);
+    const toLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    const todayKey = toKey(new Date());
+
     Object.values(data.tasks).forEach(task => {
       if (task.completedAt) {
-        const date = new Date(task.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        countsByDate[date] = (countsByDate[date] || 0) + 1;
+        // Fully completed module — all subtasks count toward its completion date
+        const completedDate = new Date(task.completedAt);
+        const key = toKey(completedDate);
+        const label = toLabel(completedDate);
+        const subtasksDone = task.subtasks.filter(s => s.completed).length;
+        if (!countsByDateKey[key]) countsByDateKey[key] = { label, count: 0 };
+        countsByDateKey[key].count += subtasksDone;
+      } else {
+        // In-progress task — attribute any checked subtasks to today
+        const partialDone = task.subtasks.filter(s => s.completed).length;
+        if (partialDone > 0) {
+          if (!countsByDateKey[todayKey]) countsByDateKey[todayKey] = { label: toLabel(new Date()), count: 0 };
+          countsByDateKey[todayKey].count += partialDone;
+        }
       }
     });
-    return Object.entries(countsByDate)
-      .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-      .map(([date, count]) => ({ date, count }));
+
+    if (Object.keys(countsByDateKey).length === 0) return [];
+
+    // Find min and max dates in the data
+    const sortedKeys = Object.keys(countsByDateKey).sort();
+    const minDate = new Date(sortedKeys[0]);
+    const maxDate = new Date(sortedKeys[sortedKeys.length - 1]);
+
+    // Fill every day from minDate to maxDate (inclusive) with 0 if missing
+    const result: { date: string; count: number }[] = [];
+    const cursor = new Date(minDate);
+    while (cursor <= maxDate) {
+      const key = toKey(cursor);
+      const entry = countsByDateKey[key];
+      result.push({ date: entry ? entry.label : toLabel(new Date(cursor)), count: entry ? entry.count : 0 });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return result;
   }, [data]);
 
   const filteredVideos = useMemo(() => {

@@ -41,7 +41,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
   const baseY = PAD.top + innerH;
 
   const getColor = (count: number) =>
-    count >= 3 ? '#34d399' : count >= 2 ? '#fbbf24' : '#f87171';
+    count === 0 ? 'var(--border-color-strong)' : count >= 8 ? '#34d399' : count >= 4 ? '#fbbf24' : '#f87171';
 
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
 
@@ -56,7 +56,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
             </span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {[['#f87171', '1'], ['#fbbf24', '2'], ['#34d399', '3+']].map(([color, label]) => (
+            {[['#f87171', '1-3'], ['#fbbf24', '4-7'], ['#34d399', '8+']].map(([color, label]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: color }} />
                 <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
@@ -128,7 +128,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
               fill="var(--bg-surface-solid)"
               stroke={getColor(p.count)}
               strokeWidth={2}
-              style={{ cursor: 'pointer', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))' }}
+              style={{ cursor: 'pointer', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))', opacity: p.count === 0 ? 0.45 : 1 }}
               onMouseEnter={() => setTooltip({ x: p.x, y: p.y, date: p.date, count: p.count })}
             />
           ))}
@@ -158,7 +158,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
                 {tooltip.date}
               </text>
               <text x="32" y="23" textAnchor="middle" fontSize="10" fill={getColor(tooltip.count)} fontFamily="var(--font-mono)" fontWeight="700">
-                {tooltip.count} task{tooltip.count !== 1 ? 's' : ''}
+                {tooltip.count} item{tooltip.count !== 1 ? 's' : ''}
               </text>
             </g>
           )}
