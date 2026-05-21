@@ -246,7 +246,12 @@ export default function Home() {
   const chartData = useMemo(() => {
     if (!data || !data.playlists) return [];
     const countsByDateKey: Record<string, { label: string; count: number }> = {};
-    const toKey = (d: Date) => d.toISOString().slice(0, 10);
+    const toKey = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
     const toLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const todayKey = toKey(new Date());
 
