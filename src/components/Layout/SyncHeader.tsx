@@ -22,6 +22,7 @@ export function SyncHeader({
   loading, progress, syncStatus, hideCompleted, onToggleHideCompleted, activePlaylistName,
 }: SyncHeaderProps) {
   const [user, setUser] = useState<{ name: string; avatar: string | null } | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
     supabase?.auth.getUser().then(({ data }) => {
@@ -70,18 +71,46 @@ export function SyncHeader({
           <>
             <button
               onClick={onToggleHideCompleted}
+              onMouseEnter={() => setIsHovered(true)}
+              onMouseLeave={() => setIsHovered(false)}
               style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 34, height: 34,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                height: 34,
+                width: isHovered ? 154 : 34,
+                paddingLeft: isHovered ? 11 : 8,
+                paddingRight: isHovered ? 10 : 0,
                 background: hideCompleted ? 'var(--accent-primary)' : 'var(--bg-surface-2)',
                 color: hideCompleted ? 'white' : 'var(--text-secondary)',
-                borderRadius: '50%',
+                borderRadius: 999,
                 border: '1px solid var(--border-color)',
-                cursor: 'pointer', transition: 'all 0.2s ease',
+                cursor: 'pointer',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s',
               }}
               title={hideCompleted ? 'Show Completed' : 'Hide Completed'}
             >
-              {hideCompleted ? <Eye style={{ width: 15, height: 15 }} /> : <EyeOff style={{ width: 15, height: 15 }} />}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, flexShrink: 0 }}>
+                {hideCompleted ? <Eye style={{ width: 15, height: 15 }} /> : <EyeOff style={{ width: 15, height: 15 }} />}
+              </div>
+              <span
+                style={{
+                  opacity: isHovered ? 1 : 0,
+                  transform: isHovered ? 'translateX(0)' : 'translateX(-6px)',
+                  transition: 'opacity 0.15s ease-out, transform 0.15s ease-out',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-mono)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginLeft: 8,
+                  pointerEvents: 'none',
+                }}
+              >
+                {hideCompleted ? 'Show Completed' : 'Hide Completed'}
+              </span>
             </button>
 
             <div style={{
