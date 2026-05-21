@@ -1,10 +1,13 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ListTodo, Zap, Eye, EyeOff } from 'lucide-react';
+import { ListTodo, Zap, Eye, EyeOff, LogOut } from 'lucide-react';
 import { SyncStatusBadge } from '@/components/CloudSyncButton';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { CloudSyncStatus } from '@/lib/cloud-storage';
+import { signOut } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import { useEffect, useState } from 'react';
 
 interface SyncHeaderProps {
   loading: boolean;
@@ -12,11 +15,25 @@ interface SyncHeaderProps {
   syncStatus: CloudSyncStatus;
   hideCompleted: boolean;
   onToggleHideCompleted: () => void;
+  activePlaylistName?: string;
 }
 
-export function SyncHeader({ 
-  loading, progress, syncStatus, hideCompleted, onToggleHideCompleted 
+export function SyncHeader({
+  loading, progress, syncStatus, hideCompleted, onToggleHideCompleted, activePlaylistName,
 }: SyncHeaderProps) {
+  const [user, setUser] = useState<{ name: string; avatar: string | null } | null>(null);
+
+  useEffect(() => {
+    supabase?.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        setUser({
+          name: data.user.user_metadata?.full_name || data.user.email || 'User',
+          avatar: data.user.user_metadata?.avatar_url || null,
+        });
+      }
+    });
+  }, []);
+
   return (
     <motion.header
       initial={{ opacity: 0, y: -16 }}
@@ -41,9 +58,9 @@ export function SyncHeader({
             fontSize: '1.5rem', fontWeight: 800, marginBottom: 2,
             background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--accent-primary) 100%)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', opacity: 0.9,
-          }}>100xDevs Tracker</h1>
+          }}>Playlist Tracker</h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: 0, fontWeight: 500 }}>
-            Product Engineering Progress
+            {activePlaylistName || 'Select a playlist to track'}
           </p>
         </div>
       </div>
@@ -62,7 +79,7 @@ export function SyncHeader({
                 border: '1px solid var(--border-color)',
                 cursor: 'pointer', transition: 'all 0.2s ease',
               }}
-              title={hideCompleted ? "Show Completed" : "Hide Completed"}
+              title={hideCompleted ? 'Show Completed' : 'Hide Completed'}
             >
               {hideCompleted ? <Eye style={{ width: 15, height: 15 }} /> : <EyeOff style={{ width: 15, height: 15 }} />}
             </button>
@@ -83,7 +100,35 @@ export function SyncHeader({
         )}
         <SyncStatusBadge status={syncStatus} />
         <ThemeToggle />
+
+        {/* User avatar + sign out */}
+        {user && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {user.avatar ? (
+              <img src={user.avatar} alt={user.name} style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--border-color-strong)' }} />
+            ) : (
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--gradient-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>
+                {user.name[0].toUpperCase()}
+              </div>
+            )}
+            <button
+              onClick={() => signOut()}
+              title="Sign out"
+              style={{
+                background: 'none', border: '1px solid var(--border-color)', borderRadius: 8,
+                padding: '0.3rem 0.5rem', cursor: 'pointer', color: 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', gap: '0.25rem',
+                fontSize: '0.6875rem', fontWeight: 500, transition: 'all 0.2s',
+              }}
+              className="signout-btn"
+            >
+              <LogOut style={{ width: 12, height: 12 }} />
+              Out
+            </button>
+          </div>
+        )}
       </div>
+      <style>{`.signout-btn:hover { color: #f87171 !important; border-color: #f87171 !important; }`}</style>
     </motion.header>
   );
 }

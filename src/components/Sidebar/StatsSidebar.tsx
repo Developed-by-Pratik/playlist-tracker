@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle2, Flame, Trophy, Target, Award, Clock, 
+  CheckCircle2, Flame, Trophy, Target, Award, 
   ChevronDown, TrendingUp 
 } from 'lucide-react';
-import { AppData, Video } from '@/lib/types';
+import { AppData, Video, PlaylistRecord } from '@/lib/types';
 import { GrowthChart } from './GrowthChart';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
+import { PlaylistSwitcher } from '@/components/Playlist/PlaylistSwitcher';
 
 interface StatsSidebarProps {
   data: AppData;
@@ -22,6 +23,11 @@ interface StatsSidebarProps {
   chartData: { date: string; count: number }[];
   sessionCount: number;
   onPomodoroStateChange: (state: 'focus' | 'break' | 'idle') => void;
+  playlists: Record<string, PlaylistRecord>;
+  activePlaylistId: string | null;
+  onSwitchPlaylist: (id: string) => void;
+  onDeletePlaylist: (id: string) => void;
+  onAddPlaylist: () => void;
 }
 
 const sidebarVariants = {
@@ -34,10 +40,12 @@ const sidebarVariants = {
 };
 
 export function StatsSidebar({ 
-  data, videos, stats, chartData, sessionCount, onPomodoroStateChange 
+  data, videos, stats, chartData, sessionCount, onPomodoroStateChange,
+  playlists, activePlaylistId, onSwitchPlaylist, onDeletePlaylist, onAddPlaylist
 }: StatsSidebarProps) {
-  const [isChartExpanded, setIsChartExpanded] = useState(false);
-  const [isMilestonesExpanded, setIsMilestonesExpanded] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<'chart' | 'milestones' | 'pomodoro' | null>(null);
+  const isChartExpanded = expandedSection === 'chart';
+  const isMilestonesExpanded = expandedSection === 'milestones';
 
   return (
     <motion.aside
@@ -53,6 +61,15 @@ export function StatsSidebar({
         paddingRight: '0.5rem',
       }}
     >
+      {/* 0. Playlist Switcher */}
+      <PlaylistSwitcher
+        playlists={playlists}
+        activePlaylistId={activePlaylistId}
+        onSwitch={onSwitchPlaylist}
+        onDelete={onDeletePlaylist}
+        onAddPlaylist={onAddPlaylist}
+      />
+
       {/* 1. Completion Card */}
       <div className="card sidebar-card" style={{ padding: '1.25rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
@@ -111,30 +128,12 @@ export function StatsSidebar({
         </div>
       </div>
 
-      {/* 2. Today's Focus Card */}
-      <div className="card sidebar-card" style={{ padding: '1.25rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-          <Clock style={{ width: 16, height: 16, color: 'var(--accent-primary)' }} />
-          <span style={{ fontSize: '0.8125rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Today's Focus
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
-          <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>
-            {sessionCount}
-          </div>
-          <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', paddingBottom: '0.2rem' }}>
-            sessions completed
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Daily Growth Chart (Toggleable) */}
+      {/* 2. Daily Growth Chart (Toggleable) */}
       <motion.div 
         layout
         className="card sidebar-card" 
         style={{ padding: '1.25rem', cursor: 'pointer' }}
-        onClick={() => !isChartExpanded && setIsChartExpanded(true)}
+        onClick={() => !isChartExpanded && setExpandedSection('chart')}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -143,8 +142,9 @@ export function StatsSidebar({
               Daily Growth
             </span>
           </div>
+
           <button 
-            onClick={(e) => { e.stopPropagation(); setIsChartExpanded(!isChartExpanded); }}
+            onClick={(e) => { e.stopPropagation(); setExpandedSection(isChartExpanded ? null : 'chart'); }}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-muted)', display: 'flex' }}
           >
             <motion.div animate={{ rotate: isChartExpanded ? 180 : 0 }}>
@@ -176,12 +176,12 @@ export function StatsSidebar({
         </AnimatePresence>
       </motion.div>
 
-      {/* 4. Milestones Section (Toggleable) */}
+      {/* 3. Milestones Section (Toggleable) */}
       <motion.div 
         layout
         className="card sidebar-card" 
         style={{ padding: '1.25rem', cursor: 'pointer' }}
-        onClick={() => !isMilestonesExpanded && setIsMilestonesExpanded(true)}
+        onClick={() => !isMilestonesExpanded && setExpandedSection('milestones')}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -191,7 +191,7 @@ export function StatsSidebar({
             </span>
           </div>
           <button 
-            onClick={(e) => { e.stopPropagation(); setIsMilestonesExpanded(!isMilestonesExpanded); }}
+            onClick={(e) => { e.stopPropagation(); setExpandedSection(isMilestonesExpanded ? null : 'milestones'); }}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-muted)', display: 'flex' }}
           >
             <motion.div animate={{ rotate: isMilestonesExpanded ? 180 : 0 }}>
@@ -241,8 +241,12 @@ export function StatsSidebar({
         </AnimatePresence>
       </motion.div>
 
-      {/* 5. Pomodoro Timer */}
-      <PomodoroTimer onStateChange={onPomodoroStateChange} />
+      {/* 4. Pomodoro Timer */}
+      <PomodoroTimer 
+        onStateChange={onPomodoroStateChange}
+        isExpanded={expandedSection === 'pomodoro'}
+        onToggleExpanded={(expanded) => setExpandedSection(expanded ? 'pomodoro' : null)}
+      />
     </motion.aside>
   );
 }

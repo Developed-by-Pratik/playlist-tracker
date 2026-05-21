@@ -1,9 +1,8 @@
 /**
  * cloud-storage.ts — Centralized real-time sync via Supabase
  *
- * All devices share a single SYNC_ID row in the `tracker_data` table.
- * Any write from any device updates that row; Supabase Realtime broadcasts
- * the change to all other connected devices instantly.
+ * sync_id is now the authenticated user's auth.uid().
+ * Each user gets their own isolated row in tracker_data.
  *
  * Required SQL (run once in Supabase SQL Editor):
  * ────────────────────────────────────────────────
@@ -13,10 +12,15 @@
  *   updated_at timestamptz default now()
  * );
  * alter table tracker_data enable row level security;
- * create policy "anon_all" on tracker_data for all using (true) with check (true);
  *
- * -- Enable realtime on this table (Supabase Dashboard → Database → Replication):
- * --   Toggle "tracker_data" table ON under Realtime.
+ * -- Authenticated users can only access their own row
+ * drop policy if exists "anon_all" on tracker_data;
+ * create policy "users_own_data" on tracker_data
+ *   for all
+ *   using  (auth.uid()::text = sync_id)
+ *   with check (auth.uid()::text = sync_id);
+ *
+ * -- Enable realtime on this table (Supabase Dashboard → Database → Replication)
  * ────────────────────────────────────────────────
  */
 
@@ -26,9 +30,11 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 
 const TABLE = 'tracker_data';
 
-/** Shared identity for all your devices — set NEXT_PUBLIC_SYNC_ID in .env.local */
-export function getSyncId(): string {
-  return process.env.NEXT_PUBLIC_SYNC_ID || 'default';
+/** Get the current user's auth UID to use as sync_id */
+export async function getSyncId(): Promise<string | null> {
+  if (!isSupabaseConfigured() || !supabase) return null;
+  const { data } = await supabase.auth.getUser();
+  return data.user?.id ?? null;
 }
 
 export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'unconfigured' | 'offline';
@@ -36,8 +42,10 @@ export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'unconfi
 /** Write the full AppData to Supabase (upsert) */
 export async function syncToCloud(data: AppData): Promise<void> {
   if (!isSupabaseConfigured() || !supabase) return;
+  const syncId = await getSyncId();
+  if (!syncId) return; // Not signed in — skip cloud sync
   await supabase.from(TABLE).upsert(
-    { sync_id: getSyncId(), data, updated_at: new Date().toISOString() },
+    { sync_id: syncId, data, updated_at: new Date().toISOString() },
     { onConflict: 'sync_id' }
   );
 }
@@ -45,71 +53,74 @@ export async function syncToCloud(data: AppData): Promise<void> {
 /** Load the current AppData from Supabase. Returns null if not found yet. */
 export async function loadFromCloud(): Promise<AppData | null> {
   if (!isSupabaseConfigured() || !supabase) return null;
+  const syncId = await getSyncId();
+  if (!syncId) return null;
   const { data, error } = await supabase
     .from(TABLE)
     .select('data')
-    .eq('sync_id', getSyncId())
+    .eq('sync_id', syncId)
     .single();
   if (error || !data) return null;
   return data.data as AppData;
 }
 
-/** 
- * Merges remote data into local data.
- * Strategy: Remote tasks override local ones, but we keep any local tasks 
- * that aren't in the cloud yet.
+/**
+ * Merges remote data into local data using Last-Write-Wins (LWW) protocol.
+ * The newer updatedAt timestamp decides which data copy is the source of truth.
  */
 export function mergeData(local: AppData, remote: AppData): AppData {
-  return {
-    ...remote,
-    tasks: {
-      ...local.tasks,
-      ...remote.tasks,
-    },
-    // Keep settings from remote as they are usually API keys/etc
-    settings: remote.settings || local.settings,
-  };
-}
+  const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+  const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
 
-let activeChannel: RealtimeChannel | null = null;
+  if (localTime >= remoteTime) {
+    // Local copy is newer (or they are identical), so local wins.
+    // Sync local to the cloud to make sure remote gets it.
+    syncToCloud(local).catch(err => console.warn('[cloud-sync] push local to cloud failed:', err));
+    return local;
+  } else {
+    // Remote copy is newer, remote wins.
+    return remote;
+  }
+}
 
 /**
  * Subscribe to real-time changes from other devices.
- * Calls `onUpdate(newData)` whenever another device writes.
  * Returns an unsubscribe function.
  */
 export function subscribeToCloudChanges(onUpdate: (data: AppData) => void): () => void {
   if (!isSupabaseConfigured() || !supabase) return () => {};
 
-  // Clean up any previous subscription
-  if (activeChannel) {
-    supabase.removeChannel(activeChannel);
-    activeChannel = null;
-  }
+  let unsubscribed = false;
+  let localChannel: RealtimeChannel | null = null;
 
-  activeChannel = supabase
-    .channel('tracker_data_changes')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: TABLE,
-        filter: `sync_id=eq.${getSyncId()}`,
-      },
-      (payload) => {
-        const newRow = payload.new as { data: AppData };
-        if (newRow?.data) {
-          onUpdate(newRow.data);
+  getSyncId().then(syncId => {
+    if (unsubscribed || !syncId || !supabase) return;
+
+    // Use a unique channel name per subscription instance to avoid React StrictMode double-mount conflicts
+    const channelName = `tracker_changes_${syncId}_${Math.random().toString(36).substring(2, 10)}`;
+    
+    localChannel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: TABLE,
+          filter: `sync_id=eq.${syncId}`,
+        },
+        payload => {
+          const newRow = payload.new as { data: AppData };
+          if (newRow?.data) onUpdate(newRow.data);
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
+  });
 
   return () => {
-    if (activeChannel && supabase) {
-      supabase.removeChannel(activeChannel);
-      activeChannel = null;
+    unsubscribed = true;
+    if (localChannel && supabase) {
+      supabase.removeChannel(localChannel);
     }
   };
 }

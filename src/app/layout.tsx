@@ -4,10 +4,11 @@ import SmoothScrollLayout from "@/components/SmoothScrollLayout";
 import BackgroundPattern from "@/components/BackgroundPattern";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import CustomCursor from "@/components/CustomCursor";
+import { AuthGate } from "@/components/Auth/AuthGate";
 
 export const metadata: Metadata = {
-  title: "100xDevs Tracker",
-  description: "Track your 100xDevs journey, maintain a daily diary, and generate LinkedIn content to build your community.",
+  title: "Playlist Tracker",
+  description: "Track your learning progress across multiple YouTube playlists. Maintain streaks, visualize growth, and stay consistent.",
 };
 
 export default function RootLayout({
@@ -21,9 +22,11 @@ export default function RootLayout({
         <ThemeProvider>
           <BackgroundPattern />
           <CustomCursor />
-          <SmoothScrollLayout>
-            {children}
-          </SmoothScrollLayout>
+          <AuthGate>
+            <SmoothScrollLayout>
+              {children}
+            </SmoothScrollLayout>
+          </AuthGate>
         </ThemeProvider>
       </body>
     </html>

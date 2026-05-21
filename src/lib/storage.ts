@@ -1,7 +1,10 @@
-import { AppData, TaskRecord, SubTask } from './types';
+import { AppData, TaskRecord, SubTask, PlaylistRecord } from './types';
 import { syncToCloud } from './cloud-storage';
 
 const STORAGE_KEY = 'playlist_tracker_data';
+
+// Legacy hardcoded playlist ID — only used during one-time migration
+const LEGACY_PLAYLIST_ID = 'PLQEaRBV9gAFsR15tNo2QLF9d2qc-c018p';
 
 export const defaultSubTasks: SubTask[] = [
   { id: 'watchVideo', label: 'Watch Module', completed: false },
@@ -11,27 +14,49 @@ export const defaultSubTasks: SubTask[] = [
 ];
 
 const defaultData: AppData = {
-  settings: {
-    youtubeApiKey: '',
-  },
-  tasks: {},
+  settings: { youtubeApiKey: '' },
+  playlists: {},
+  activePlaylistId: null,
 };
 
-/** Apply data migrations (e.g. subtasks object → array) */
-function migrateData(parsed: AppData): AppData {
-  Object.keys(parsed.tasks).forEach(id => {
-    const t = parsed.tasks[id];
-    if (t.subtasks && !Array.isArray(t.subtasks)) {
-      const old = t.subtasks as any;
-      t.subtasks = [
-        { id: 'watchVideo', label: 'Watch Module', completed: !!old.watchVideo },
-        { id: 'programPractice', label: 'Code Practice', completed: !!old.programPractice },
-        { id: 'postLinkedIn', label: 'Community Post', completed: !!old.postLinkedIn },
-        { id: 'updateNaukri', label: 'Profile Update', completed: !!old.updateNaukri },
-      ];
-    }
-  });
-  return parsed;
+/** Apply data migrations */
+function migrateData(parsed: any): AppData {
+  // Step 1: Migrate old subtasks object → array format (pre-playlist era)
+  if (parsed.tasks && typeof parsed.tasks === 'object') {
+    Object.keys(parsed.tasks).forEach(id => {
+      const t = parsed.tasks[id];
+      if (t.subtasks && !Array.isArray(t.subtasks)) {
+        const old = t.subtasks as any;
+        t.subtasks = [
+          { id: 'watchVideo', label: 'Watch Module', completed: !!old.watchVideo },
+          { id: 'programPractice', label: 'Code Practice', completed: !!old.programPractice },
+          { id: 'postLinkedIn', label: 'Community Post', completed: !!old.postLinkedIn },
+          { id: 'updateNaukri', label: 'Profile Update', completed: !!old.updateNaukri },
+        ];
+      }
+    });
+  }
+
+  // Step 2: Migrate legacy flat `tasks` → wrap into a PlaylistRecord
+  if (parsed.tasks && !parsed.playlists) {
+    const legacyId = 'legacy';
+    const legacyPlaylist: PlaylistRecord = {
+      id: legacyId,
+      name: 'My Playlist',
+      youtubePlaylistId: LEGACY_PLAYLIST_ID,
+      addedAt: new Date().toISOString(),
+      tasks: parsed.tasks,
+    };
+    parsed.playlists = { [legacyId]: legacyPlaylist };
+    parsed.activePlaylistId = legacyId;
+    delete parsed.tasks;
+  }
+
+  // Ensure required fields exist
+  if (!parsed.playlists) parsed.playlists = {};
+  if (!('activePlaylistId' in parsed)) parsed.activePlaylistId = null;
+
+  return parsed as AppData;
 }
 
 export const loadData = (): AppData => {
@@ -39,7 +64,7 @@ export const loadData = (): AppData => {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored) {
     try {
-      return migrateData(JSON.parse(stored) as AppData);
+      return migrateData(JSON.parse(stored));
     } catch (e) {
       console.error('Failed to parse app data', e);
       return defaultData;
@@ -48,42 +73,92 @@ export const loadData = (): AppData => {
   return defaultData;
 };
 
-/**
- * Save to localStorage AND push to Supabase.
- * Cloud sync is fire-and-forget — it never blocks the UI.
- */
 export const saveData = (data: AppData): void => {
   if (typeof window === 'undefined') return;
+  data.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  // Fire-and-forget cloud sync
   syncToCloud(data).catch(err => console.warn('[cloud-sync] write failed:', err));
 };
 
+// ── Playlist CRUD ──────────────────────────────────────────────────────────────
+
+export const addPlaylist = (name: string, youtubePlaylistId: string): AppData => {
+  const data = loadData();
+  const id = crypto.randomUUID();
+  const playlist: PlaylistRecord = {
+    id,
+    name: name.trim(),
+    youtubePlaylistId,
+    addedAt: new Date().toISOString(),
+    tasks: {},
+  };
+  data.playlists[id] = playlist;
+  if (!data.activePlaylistId) data.activePlaylistId = id;
+  saveData(data);
+  return data;
+};
+
+export const removePlaylist = (playlistId: string): AppData => {
+  const data = loadData();
+  delete data.playlists[playlistId];
+  if (data.activePlaylistId === playlistId) {
+    const remaining = Object.keys(data.playlists);
+    data.activePlaylistId = remaining.length > 0 ? remaining[0] : null;
+  }
+  saveData(data);
+  return data;
+};
+
+export const setActivePlaylist = (playlistId: string): AppData => {
+  const data = loadData();
+  if (data.playlists[playlistId]) {
+    data.activePlaylistId = playlistId;
+    saveData(data);
+  }
+  return data;
+};
+
+export const renamePlaylist = (playlistId: string, name: string): AppData => {
+  const data = loadData();
+  if (data.playlists[playlistId]) {
+    data.playlists[playlistId].name = name.trim();
+    saveData(data);
+  }
+  return data;
+};
+
+// ── Task CRUD (scoped per playlist) ───────────────────────────────────────────
+
 export const updateTask = (
+  playlistId: string,
   videoId: string,
   updates: Partial<TaskRecord>
-) => {
+): AppData => {
   const data = loadData();
-  const existing = data.tasks[videoId] || {
+  const playlist = data.playlists[playlistId];
+  if (!playlist) return data;
+
+  const existing = playlist.tasks[videoId] || {
     videoId,
     subtasks: [...defaultSubTasks],
   };
 
   const updatedTask = { ...existing, ...updates };
 
-  const allCompleted = updatedTask.subtasks.length > 0 && updatedTask.subtasks.every(s => s.completed);
+  const allCompleted =
+    updatedTask.subtasks.length > 0 && updatedTask.subtasks.every(s => s.completed);
   if (allCompleted && !updatedTask.completedAt) {
     updatedTask.completedAt = new Date().toISOString();
   } else if (!allCompleted && updatedTask.completedAt) {
     updatedTask.completedAt = undefined;
   }
 
-  data.tasks[videoId] = updatedTask;
+  playlist.tasks[videoId] = updatedTask;
   saveData(data);
   return data;
 };
 
-export const updateSettings = (apiKey: string) => {
+export const updateSettings = (apiKey: string): AppData => {
   const data = loadData();
   data.settings.youtubeApiKey = apiKey;
   saveData(data);

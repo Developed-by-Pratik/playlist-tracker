@@ -12,6 +12,8 @@ const BREAK_TIME = 5 * 60;
 interface PomodoroProps {
   onStateChange?: (state: 'focus' | 'break' | 'idle') => void;
   currentVideoDuration?: string; // e.g. "10:05"
+  isExpanded?: boolean;
+  onToggleExpanded?: (expanded: boolean) => void;
 }
 
 const HEALTH_PROMPTS = [
@@ -23,11 +25,25 @@ const HEALTH_PROMPTS = [
   "Stand up and walk for 1 minute 🚶"
 ];
 
-export function PomodoroTimer({ onStateChange, currentVideoDuration }: PomodoroProps) {
+export function PomodoroTimer({ 
+  onStateChange, 
+  currentVideoDuration,
+  isExpanded: controlledIsExpanded,
+  onToggleExpanded
+}: PomodoroProps) {
   const [timeLeft, setTimeLeft] = useState(FOCUS_TIME);
   const [isRunning, setIsRunning] = useState(false);
   const [mode, setMode] = useState<TimerMode>('focus');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpandedLocal, setIsExpandedLocal] = useState(false);
+
+  const isExpanded = controlledIsExpanded !== undefined ? controlledIsExpanded : isExpandedLocal;
+  const setIsExpanded = (val: boolean) => {
+    if (onToggleExpanded) {
+      onToggleExpanded(val);
+    } else {
+      setIsExpandedLocal(val);
+    }
+  };
   const [showCustom, setShowCustom] = useState(false);
   const [presets, setPresets] = useState({ focus: 25, break: 5 });
   const timerRef = useRef<NodeJS.Timeout | null>(null);

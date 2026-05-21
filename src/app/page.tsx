@@ -1,23 +1,22 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { loadData, updateTask } from '@/lib/storage';
-import { fetchPlaylistVideos } from '@/lib/youtube';
+import { loadData, updateTask, addPlaylist, removePlaylist, setActivePlaylist } from '@/lib/storage';
 import { AppData, Video } from '@/lib/types';
 import { PlayCircle, Code2, Users, Briefcase, Zap, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// New Components
 import { StatsSidebar } from '@/components/Sidebar/StatsSidebar';
 import { VideoCard } from '@/components/VideoList/VideoCard';
 import { SyncHeader } from '@/components/Layout/SyncHeader';
 import { SkeletonLoader } from '@/components/Layout/SkeletonLoader';
+import { EmptyState } from '@/components/Playlist/EmptyState';
+import { AddPlaylistModal } from '@/components/Playlist/AddPlaylistModal';
+import { PlaylistSwitcher } from '@/components/Playlist/PlaylistSwitcher';
 
-// Libs
 import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus, mergeData } from '@/lib/cloud-storage';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
-// Constants
 const DEFAULT_ICONS: Record<string, any> = {
   watchVideo: PlayCircle,
   programPractice: Code2,
@@ -32,14 +31,10 @@ const DEFAULT_SUBTASKS = [
   { id: 'updateNaukri', label: 'Profile Update', completed: false },
 ];
 
-// Helper to parse ISO 8601 duration
 const parseISODuration = (duration: string) => {
   const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return 0;
-  const hours = parseInt(match[1] || '0');
-  const minutes = parseInt(match[2] || '0');
-  const seconds = parseInt(match[3] || '0');
-  return hours * 3600 + minutes * 60 + seconds;
+  return (parseInt(match[1] || '0') * 3600) + (parseInt(match[2] || '0') * 60) + parseInt(match[3] || '0');
 };
 
 const containerVariants = {
@@ -51,6 +46,7 @@ export default function Home() {
   const [data, setData] = useState<AppData | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
+  const [videosLoading, setVideosLoading] = useState(false);
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(
@@ -58,8 +54,10 @@ export default function Home() {
   );
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const isRemoteUpdate = useRef(false);
+  const lastPlaylistId = useRef<string | null>(null);
 
   useEffect(() => {
     const handleScroll = () => setShowScrollTop(window.scrollY > 400);
@@ -67,6 +65,7 @@ export default function Home() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Load data from localStorage + cloud on mount
   const loadInitialData = async () => {
     const local = loadData();
     setData(local);
@@ -83,78 +82,121 @@ export default function Home() {
           setSyncStatus('synced');
           setTimeout(() => setSyncStatus('idle'), 2000);
         }
-      } catch (e) {
+      } catch {
         setSyncStatus('error');
         setTimeout(() => setSyncStatus('idle'), 4000);
       }
-    }
-
-    try {
-      const vids = await fetchPlaylistVideos();
-      setVideos(vids);
-    } catch (e) {
-      console.error(e);
     }
     setLoading(false);
   };
 
   useEffect(() => {
     loadInitialData();
-    
-    const unsubscribe = subscribeToCloudChanges((remoteData) => {
+    const unsubscribe = subscribeToCloudChanges(remoteData => {
       isRemoteUpdate.current = true;
       setData(prev => prev ? mergeData(prev, remoteData) : remoteData);
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus('idle'), 2000);
       isRemoteUpdate.current = false;
     });
-
     return unsubscribe;
   }, []);
 
-  const handleSubtaskToggle = useCallback((videoId: string, subtaskId: string) => {
+  // Fetch videos when active playlist changes
+  useEffect(() => {
     if (!data) return;
-    const currentTask = data.tasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
-    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+    const activeId = data.activePlaylistId;
+    const playlist = activeId ? data.playlists[activeId] : null;
+    if (!playlist) { setVideos([]); return; }
+    if (lastPlaylistId.current === activeId) return; // Already loaded
+    lastPlaylistId.current = activeId;
 
-    const updatedSubtasks = subtasksToUse.map(s => 
+    setVideosLoading(true);
+    setExpandedVideoId(null);
+    fetch(`/api/youtube?playlistId=${playlist.youtubePlaylistId}`)
+      .then(r => r.json())
+      .then(vids => {
+        if (Array.isArray(vids)) setVideos(vids);
+        else setVideos([]);
+      })
+      .catch(() => setVideos([]))
+      .finally(() => setVideosLoading(false));
+  }, [data?.activePlaylistId]);
+
+  // Active playlist derived state
+  const activePlaylist = useMemo(() => {
+    if (!data || !data.activePlaylistId) return null;
+    return data.playlists[data.activePlaylistId] || null;
+  }, [data]);
+
+  const activeTasks = useMemo(() => activePlaylist?.tasks || {}, [activePlaylist]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleSubtaskToggle = useCallback((videoId: string, subtaskId: string) => {
+    if (!data?.activePlaylistId) return;
+    const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+    const updatedSubtasks = subtasksToUse.map(s =>
       s.id === subtaskId ? { ...s, completed: !s.completed } : s
     );
-    const updated = updateTask(videoId, { subtasks: updatedSubtasks });
-    setData(updated);
-  }, [data]);
+    const updated = updateTask(data.activePlaylistId, videoId, { subtasks: updatedSubtasks });
+    setData({ ...updated });
+  }, [data, activeTasks]);
 
   const handleAddSubtask = useCallback((videoId: string, label: string) => {
-    if (!data || !label.trim()) return;
-    const currentTask = data.tasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+    if (!data?.activePlaylistId || !label.trim()) return;
+    const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
     const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
-
     const newSubtask = { id: `custom-${Date.now()}`, label, completed: false };
-    const updated = updateTask(videoId, { subtasks: [...subtasksToUse, newSubtask] });
-    setData(updated);
-  }, [data]);
+    const updated = updateTask(data.activePlaylistId, videoId, { subtasks: [...subtasksToUse, newSubtask] });
+    setData({ ...updated });
+  }, [data, activeTasks]);
 
   const handleDeleteSubtask = useCallback((videoId: string, subtaskId: string) => {
-    if (!data) return;
-    const currentTask = data.tasks[videoId];
+    if (!data?.activePlaylistId) return;
+    const currentTask = activeTasks[videoId];
     if (!currentTask) return;
     const updatedSubtasks = currentTask.subtasks.filter(s => s.id !== subtaskId);
-    const updated = updateTask(videoId, { subtasks: updatedSubtasks });
-    setData(updated);
+    const updated = updateTask(data.activePlaylistId, videoId, { subtasks: updatedSubtasks });
+    setData({ ...updated });
+  }, [data, activeTasks]);
+
+  const handleAddPlaylist = useCallback((name: string, youtubePlaylistId: string) => {
+    const updated = addPlaylist(name, youtubePlaylistId);
+    lastPlaylistId.current = null; // Force video re-fetch
+    setData({ ...updated });
+  }, []);
+
+  const handleDeletePlaylist = useCallback((playlistId: string) => {
+    const updated = removePlaylist(playlistId);
+    lastPlaylistId.current = null;
+    setData({ ...updated });
+    setVideos([]);
+  }, []);
+
+  const handleSwitchPlaylist = useCallback((playlistId: string) => {
+    if (!data || data.activePlaylistId === playlistId) return;
+    lastPlaylistId.current = null; // Force video re-fetch
+    const updated = setActivePlaylist(playlistId);
+    setData({ ...updated });
+    setVideos([]);
   }, [data]);
 
   const handlePomodoroStateChange = (state: 'focus' | 'break' | 'idle') => {
     if (state === 'break') setSessionCount(prev => prev + 1);
   };
 
+  // ── Stats ──────────────────────────────────────────────────────────────────
+
   const stats = useMemo(() => {
-    if (!data || videos.length === 0) return { completed: 0, total: 0, progress: 0, streak: 0 };
+    if (!activePlaylist || videos.length === 0) return { completed: 0, total: 0, progress: 0, streak: 0 };
     let completed = 0;
     const completionDates = new Set<string>();
 
     videos.forEach(v => {
-      const t = data.tasks[v.id];
-      if (t && t.completedAt) {
+      const t = activeTasks[v.id];
+      if (t?.completedAt) {
         completed++;
         completionDates.add(new Date(t.completedAt).toDateString());
       }
@@ -163,9 +205,9 @@ export default function Home() {
     let streak = 0;
     const today = new Date();
     const checkDate = new Date();
-    const doneToday = completionDates.has(today.toDateString());
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
+    const doneToday = completionDates.has(today.toDateString());
     const doneYesterday = completionDates.has(yesterday.toDateString());
 
     if (doneToday || doneYesterday) {
@@ -177,46 +219,38 @@ export default function Home() {
     }
 
     return { completed, total: videos.length, progress: Math.round((completed / videos.length) * 100) || 0, streak };
-  }, [data, videos]);
+  }, [activePlaylist, activeTasks, videos]);
 
   const chartData = useMemo(() => {
-    if (!data) return [];
-
-    // Map from ISO date string (YYYY-MM-DD) -> { label, count }
+    if (!data || !data.playlists) return [];
     const countsByDateKey: Record<string, { label: string; count: number }> = {};
-
     const toKey = (d: Date) => d.toISOString().slice(0, 10);
     const toLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
     const todayKey = toKey(new Date());
 
-    Object.values(data.tasks).forEach(task => {
-      if (task.completedAt) {
-        // Fully completed module — all subtasks count toward its completion date
-        const completedDate = new Date(task.completedAt);
-        const key = toKey(completedDate);
-        const label = toLabel(completedDate);
-        const subtasksDone = task.subtasks.filter(s => s.completed).length;
-        if (!countsByDateKey[key]) countsByDateKey[key] = { label, count: 0 };
-        countsByDateKey[key].count += subtasksDone;
-      } else {
-        // In-progress task — attribute any checked subtasks to today
-        const partialDone = task.subtasks.filter(s => s.completed).length;
-        if (partialDone > 0) {
-          if (!countsByDateKey[todayKey]) countsByDateKey[todayKey] = { label: toLabel(new Date()), count: 0 };
-          countsByDateKey[todayKey].count += partialDone;
+    Object.values(data.playlists).forEach(playlist => {
+      Object.values(playlist.tasks || {}).forEach(task => {
+        if (task.completedAt) {
+          const completedDate = new Date(task.completedAt);
+          const key = toKey(completedDate);
+          const label = toLabel(completedDate);
+          const subtasksDone = task.subtasks.filter(s => s.completed).length;
+          if (!countsByDateKey[key]) countsByDateKey[key] = { label, count: 0 };
+          countsByDateKey[key].count += subtasksDone;
+        } else {
+          const partialDone = task.subtasks.filter(s => s.completed).length;
+          if (partialDone > 0) {
+            if (!countsByDateKey[todayKey]) countsByDateKey[todayKey] = { label: toLabel(new Date()), count: 0 };
+            countsByDateKey[todayKey].count += partialDone;
+          }
         }
-      }
+      });
     });
 
     if (Object.keys(countsByDateKey).length === 0) return [];
-
-    // Find min and max dates in the data
     const sortedKeys = Object.keys(countsByDateKey).sort();
     const minDate = new Date(sortedKeys[0]);
     const maxDate = new Date(sortedKeys[sortedKeys.length - 1]);
-
-    // Fill every day from minDate to maxDate (inclusive) with 0 if missing
     const result: { date: string; count: number }[] = [];
     const cursor = new Date(minDate);
     while (cursor <= maxDate) {
@@ -225,81 +259,123 @@ export default function Home() {
       result.push({ date: entry ? entry.label : toLabel(new Date(cursor)), count: entry ? entry.count : 0 });
       cursor.setDate(cursor.getDate() + 1);
     }
-
     return result;
   }, [data]);
 
   const filteredVideos = useMemo(() => {
-    if (!hideCompleted || !data) return videos;
-    return videos.filter(v => {
-      const task = data.tasks[v.id];
-      return !task || !task.completedAt;
-    });
-  }, [videos, hideCompleted, data]);
+    if (!hideCompleted) return videos;
+    return videos.filter(v => !activeTasks[v.id]?.completedAt);
+  }, [videos, hideCompleted, activeTasks]);
 
-  if (!data || (loading && videos.length === 0)) return <SkeletonLoader />;
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (!data || loading) return <SkeletonLoader />;
+
+  const hasPlaylists = Object.keys(data.playlists).length > 0;
 
   return (
     <>
-    <main className="container" style={{ paddingBottom: '6rem' }}>
-      <SyncHeader 
-        loading={loading} 
-        progress={stats.progress} 
-        syncStatus={syncStatus} 
-        hideCompleted={hideCompleted}
-        onToggleHideCompleted={() => setHideCompleted(!hideCompleted)}
-      />
-
-      <div className="main-grid">
-        <StatsSidebar 
-          data={data}
-          videos={videos}
-          stats={stats}
-          chartData={chartData}
-          sessionCount={sessionCount}
-          onPomodoroStateChange={handlePomodoroStateChange}
+      <main className="container" style={{ paddingBottom: '6rem' }}>
+        <SyncHeader
+          loading={videosLoading}
+          progress={stats.progress}
+          syncStatus={syncStatus}
+          hideCompleted={hideCompleted}
+          onToggleHideCompleted={() => setHideCompleted(!hideCompleted)}
+          activePlaylistName={activePlaylist?.name}
         />
 
-        <motion.div
-          className="flex flex-col"
-          style={{ gap: '0.75rem', width: '100%', minWidth: 0 }}
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          {filteredVideos.map((video, index) => {
-            const originalIndex = videos.findIndex(v => v.id === video.id);
-            return (
-              <VideoCard 
-                key={video.id}
-                video={video}
-                index={originalIndex}
-                task={data.tasks[video.id] || { videoId: video.id, subtasks: [] }}
-                isExpanded={expandedVideoId === video.id}
-                onToggleExpand={() => setExpandedVideoId(expandedVideoId === video.id ? null : video.id)}
-                onSubtaskToggle={handleSubtaskToggle}
-                onAddSubtask={handleAddSubtask}
-                onDeleteSubtask={handleDeleteSubtask}
-                defaultSubtasks={DEFAULT_SUBTASKS}
-                icons={DEFAULT_ICONS}
-                parseISODuration={parseISODuration}
-              />
-            );
-          })}
-          {filteredVideos.length === 0 && !loading && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              style={{ textAlign: 'center', padding: '4rem 2rem', background: 'var(--bg-surface-2)', borderRadius: 20, border: '1px dashed var(--border-color)' }}
+        {!hasPlaylists ? (
+          // ── Empty state ──
+          <EmptyState onAddPlaylist={() => setIsModalOpen(true)} />
+        ) : (
+          // ── Main layout ──
+          <div className="main-grid">
+            <StatsSidebar
+              data={data}
+              videos={videos}
+              stats={stats}
+              chartData={chartData}
+              sessionCount={sessionCount}
+              onPomodoroStateChange={handlePomodoroStateChange}
+              playlists={data.playlists}
+              activePlaylistId={data.activePlaylistId}
+              onSwitchPlaylist={handleSwitchPlaylist}
+              onDeletePlaylist={handleDeletePlaylist}
+              onAddPlaylist={() => setIsModalOpen(true)}
+            />
+
+            <motion.div
+              className="flex flex-col"
+              style={{ gap: '0.75rem', width: '100%', minWidth: 0 }}
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
             >
-              <Zap style={{ width: 40, height: 40, color: 'var(--accent-primary)', margin: '0 auto 1rem', opacity: 0.5 }} />
-              <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.125rem' }}>All Modules Completed!</p>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>You've finished everything in your current view. Disable "Hide Done" to see all modules.</p>
+              {videosLoading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {[1,2,3,4].map(i => (
+                    <div key={i} style={{ height: 70, borderRadius: 20, background: 'var(--bg-surface-2)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {filteredVideos.map((video, index) => {
+                    const originalIndex = videos.findIndex(v => v.id === video.id);
+                    return (
+                      <VideoCard
+                        key={video.id}
+                        video={video}
+                        index={originalIndex}
+                        task={activeTasks[video.id] || { videoId: video.id, subtasks: [] }}
+                        isExpanded={expandedVideoId === video.id}
+                        onToggleExpand={() => setExpandedVideoId(expandedVideoId === video.id ? null : video.id)}
+                        onSubtaskToggle={handleSubtaskToggle}
+                        onAddSubtask={handleAddSubtask}
+                        onDeleteSubtask={handleDeleteSubtask}
+                        defaultSubtasks={DEFAULT_SUBTASKS}
+                        icons={DEFAULT_ICONS}
+                        parseISODuration={parseISODuration}
+                      />
+                    );
+                  })}
+                  {filteredVideos.length === 0 && !videosLoading && videos.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      style={{ textAlign: 'center', padding: '4rem 2rem', background: 'var(--bg-surface-2)', borderRadius: 20, border: '1px dashed var(--border-color)' }}
+                    >
+                      <Zap style={{ width: 40, height: 40, color: 'var(--accent-primary)', margin: '0 auto 1rem', opacity: 0.5 }} />
+                      <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.125rem' }}>All Modules Completed!</p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Disable &ldquo;Hide Done&rdquo; to see all modules.</p>
+                    </motion.div>
+                  )}
+                  {videos.length === 0 && !videosLoading && activePlaylist && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      style={{ textAlign: 'center', padding: '4rem 2rem', background: 'var(--bg-surface-2)', borderRadius: 20, border: '1px dashed var(--border-color)' }}
+                    >
+                      <Zap style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.4 }} />
+                      <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.125rem' }}>No videos found</p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>The playlist may be private or empty.</p>
+                    </motion.div>
+                  )}
+                </>
+              )}
             </motion.div>
-          )}
-        </motion.div>
-      </div>
-    </main>
+          </div>
+        )}
+      </main>
+
+      {/* Add Playlist Modal */}
+      <AddPlaylistModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onAdd={handleAddPlaylist}
+      />
+
+      {/* Scroll to top */}
       <AnimatePresence>
         {showScrollTop && (
           <motion.button
@@ -320,6 +396,10 @@ export default function Home() {
           </motion.button>
         )}
       </AnimatePresence>
+
+      <style>{`
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      `}</style>
     </>
   );
 }
