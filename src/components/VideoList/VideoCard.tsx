@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PlayCircle, CheckCircle2, ChevronDown, 
@@ -11,9 +11,9 @@ import { Video, TaskRecord, SubTask } from '@/lib/types';
 interface VideoCardProps {
   video: Video;
   index: number;
-  task: TaskRecord;
+  task?: TaskRecord;
   isExpanded: boolean;
-  onToggleExpand: () => void;
+  onToggleExpand: (videoId: string) => void;
   onSubtaskToggle: (videoId: string, subtaskId: string) => void;
   onAddSubtask: (videoId: string, label: string) => void;
   onDeleteSubtask: (videoId: string, subtaskId: string) => void;
@@ -64,7 +64,7 @@ const itemVariants = {
   }
 };
 
-export function VideoCard({ 
+export const VideoCard = memo(function VideoCard({ 
   video, index, task, isExpanded, onToggleExpand, 
   onSubtaskToggle, onAddSubtask, onDeleteSubtask,
   defaultSubtasks, icons, parseISODuration 
@@ -173,8 +173,8 @@ export function VideoCard({
     };
   }, [isPlaying, video.id]);
   
-  const displaySubtasks = task.subtasks.length > 0 ? task.subtasks : defaultSubtasks;
-  const isCompleted = task.completedAt !== undefined;
+  const displaySubtasks = task?.subtasks && task.subtasks.length > 0 ? task.subtasks : defaultSubtasks;
+  const isCompleted = task?.completedAt !== undefined;
   const subtaskCount = displaySubtasks.filter(s => s.completed).length;
   const totalSubtasks = displaySubtasks.length;
 
@@ -209,7 +209,7 @@ export function VideoCard({
 
       <div
         className="flex items-center justify-between cursor-pointer"
-        onClick={onToggleExpand}
+        onClick={() => onToggleExpand(video.id)}
         style={{ padding: '1.125rem 1.375rem', gap: '1rem' }}
       >
         <div className="flex items-center" style={{ gap: '0.875rem', minWidth: 0 }}>
@@ -450,4 +450,4 @@ export function VideoCard({
       `}</style>
     </motion.div>
   );
-}
+});

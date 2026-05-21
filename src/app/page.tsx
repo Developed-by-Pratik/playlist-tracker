@@ -136,34 +136,48 @@ export default function Home() {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
+  const handleToggleExpand = useCallback((videoId: string) => {
+    setExpandedVideoId(prev => prev === videoId ? null : videoId);
+  }, []);
+
   const handleSubtaskToggle = useCallback((videoId: string, subtaskId: string) => {
-    if (!data?.activePlaylistId) return;
-    const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
-    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
-    const updatedSubtasks = subtasksToUse.map(s =>
-      s.id === subtaskId ? { ...s, completed: !s.completed } : s
-    );
-    const updated = updateTask(data.activePlaylistId, videoId, { subtasks: updatedSubtasks });
-    setData({ ...updated });
-  }, [data, activeTasks]);
+    setData(prev => {
+      if (!prev?.activePlaylistId) return prev;
+      const activeId = prev.activePlaylistId;
+      const activeTasks = prev.playlists[activeId]?.tasks || {};
+      const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+      const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+      const updatedSubtasks = subtasksToUse.map(s =>
+        s.id === subtaskId ? { ...s, completed: !s.completed } : s
+      );
+      return updateTask(activeId, videoId, { subtasks: updatedSubtasks }, prev);
+    });
+  }, []);
 
   const handleAddSubtask = useCallback((videoId: string, label: string) => {
-    if (!data?.activePlaylistId || !label.trim()) return;
-    const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
-    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
-    const newSubtask = { id: `custom-${Date.now()}`, label, completed: false };
-    const updated = updateTask(data.activePlaylistId, videoId, { subtasks: [...subtasksToUse, newSubtask] });
-    setData({ ...updated });
-  }, [data, activeTasks]);
+    if (!label.trim()) return;
+    setData(prev => {
+      if (!prev?.activePlaylistId) return prev;
+      const activeId = prev.activePlaylistId;
+      const activeTasks = prev.playlists[activeId]?.tasks || {};
+      const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+      const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+      const newSubtask = { id: `custom-${Date.now()}`, label, completed: false };
+      return updateTask(activeId, videoId, { subtasks: [...subtasksToUse, newSubtask] }, prev);
+    });
+  }, []);
 
   const handleDeleteSubtask = useCallback((videoId: string, subtaskId: string) => {
-    if (!data?.activePlaylistId) return;
-    const currentTask = activeTasks[videoId];
-    if (!currentTask) return;
-    const updatedSubtasks = currentTask.subtasks.filter(s => s.id !== subtaskId);
-    const updated = updateTask(data.activePlaylistId, videoId, { subtasks: updatedSubtasks });
-    setData({ ...updated });
-  }, [data, activeTasks]);
+    setData(prev => {
+      if (!prev?.activePlaylistId) return prev;
+      const activeId = prev.activePlaylistId;
+      const activeTasks = prev.playlists[activeId]?.tasks || {};
+      const currentTask = activeTasks[videoId];
+      if (!currentTask) return prev;
+      const updatedSubtasks = currentTask.subtasks.filter(s => s.id !== subtaskId);
+      return updateTask(activeId, videoId, { subtasks: updatedSubtasks }, prev);
+    });
+  }, []);
 
   const handleAddPlaylist = useCallback((name: string, youtubePlaylistId: string) => {
     const updated = addPlaylist(name, youtubePlaylistId);
@@ -336,9 +350,9 @@ export default function Home() {
                         key={video.id}
                         video={video}
                         index={originalIndex}
-                        task={activeTasks[video.id] || { videoId: video.id, subtasks: [] }}
+                        task={activeTasks[video.id]}
                         isExpanded={expandedVideoId === video.id}
-                        onToggleExpand={() => setExpandedVideoId(expandedVideoId === video.id ? null : video.id)}
+                        onToggleExpand={handleToggleExpand}
                         onSubtaskToggle={handleSubtaskToggle}
                         onAddSubtask={handleAddSubtask}
                         onDeleteSubtask={handleDeleteSubtask}

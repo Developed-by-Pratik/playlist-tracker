@@ -8,8 +8,15 @@ import {
 } from 'lucide-react';
 import { AppData, Video, PlaylistRecord } from '@/lib/types';
 import { GrowthChart } from './GrowthChart';
-import { PomodoroTimer } from '@/components/PomodoroTimer';
 import { PlaylistSwitcher } from '@/components/Playlist/PlaylistSwitcher';
+import dynamic from 'next/dynamic';
+
+const PomodoroTimer = dynamic(() => import('@/components/PomodoroTimer').then(m => m.PomodoroTimer), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: 60, borderRadius: 20, background: 'var(--bg-surface-2)', border: '1px solid var(--border-color)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+  )
+});
 
 interface StatsSidebarProps {
   data: AppData;

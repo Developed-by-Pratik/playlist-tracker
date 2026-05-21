@@ -139,18 +139,19 @@ export const updatePlaylistVideoCount = (playlistId: string, count: number): App
 export const updateTask = (
   playlistId: string,
   videoId: string,
-  updates: Partial<TaskRecord>
+  updates: Partial<TaskRecord>,
+  existingData?: AppData
 ): AppData => {
-  const data = loadData();
+  const data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
   const playlist = data.playlists[playlistId];
   if (!playlist) return data;
 
-  const existing = playlist.tasks[videoId] || {
+  const existing: TaskRecord = playlist.tasks[videoId] || {
     videoId,
     subtasks: [...defaultSubTasks],
   };
 
-  const updatedTask = { ...existing, ...updates };
+  const updatedTask: TaskRecord = { ...existing, ...updates };
 
   const allCompleted =
     updatedTask.subtasks.length > 0 && updatedTask.subtasks.every(s => s.completed);
