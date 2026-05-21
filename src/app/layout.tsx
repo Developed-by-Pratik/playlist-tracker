@@ -3,7 +3,6 @@ import "./globals.css";
 import SmoothScrollLayout from "@/components/SmoothScrollLayout";
 import BackgroundPattern from "@/components/BackgroundPattern";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import CustomCursor from "@/components/CustomCursor";
 import { AuthGate } from "@/components/Auth/AuthGate";
 
 export const metadata: Metadata = {
@@ -21,7 +20,6 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <BackgroundPattern />
-          <CustomCursor />
           <AuthGate>
             <SmoothScrollLayout>
               {children}
