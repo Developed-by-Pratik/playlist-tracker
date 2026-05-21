@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { loadData, updateTask, addPlaylist, removePlaylist, setActivePlaylist } from '@/lib/storage';
+import { loadData, updateTask, addPlaylist, removePlaylist, setActivePlaylist, updatePlaylistVideoCount, renamePlaylist } from '@/lib/storage';
 import { AppData, Video } from '@/lib/types';
 import { PlayCircle, Code2, Users, Briefcase, Zap, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,16 +19,10 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 
 const DEFAULT_ICONS: Record<string, any> = {
   watchVideo: PlayCircle,
-  programPractice: Code2,
-  postLinkedIn: Users,
-  updateNaukri: Briefcase,
 };
 
 const DEFAULT_SUBTASKS = [
-  { id: 'watchVideo', label: 'Watch Module', completed: false },
-  { id: 'programPractice', label: 'Code Practice', completed: false },
-  { id: 'postLinkedIn', label: 'Community Post', completed: false },
-  { id: 'updateNaukri', label: 'Profile Update', completed: false },
+  { id: 'watchVideo', label: 'Watch Video', completed: false },
 ];
 
 const parseISODuration = (duration: string) => {
@@ -115,9 +109,18 @@ export default function Home() {
     setExpandedVideoId(null);
     fetch(`/api/youtube?playlistId=${playlist.youtubePlaylistId}`)
       .then(r => r.json())
-      .then(vids => {
-        if (Array.isArray(vids)) setVideos(vids);
-        else setVideos([]);
+      .then(resData => {
+        const vids = resData && typeof resData === 'object' && 'videos' in resData ? resData.videos : resData;
+        if (Array.isArray(vids)) {
+          setVideos(vids);
+          // If the stored videoCount does not match or is undefined, update it!
+          if (playlist.videoCount !== vids.length) {
+            const updated = updatePlaylistVideoCount(playlist.id, vids.length);
+            setData(updated);
+          }
+        } else {
+          setVideos([]);
+        }
       })
       .catch(() => setVideos([]))
       .finally(() => setVideosLoading(false));
@@ -165,6 +168,11 @@ export default function Home() {
   const handleAddPlaylist = useCallback((name: string, youtubePlaylistId: string) => {
     const updated = addPlaylist(name, youtubePlaylistId);
     lastPlaylistId.current = null; // Force video re-fetch
+    setData({ ...updated });
+  }, []);
+
+  const handleRenamePlaylist = useCallback((playlistId: string, name: string) => {
+    const updated = renamePlaylist(playlistId, name);
     setData({ ...updated });
   }, []);
 
@@ -303,6 +311,7 @@ export default function Home() {
               onSwitchPlaylist={handleSwitchPlaylist}
               onDeletePlaylist={handleDeletePlaylist}
               onAddPlaylist={() => setIsModalOpen(true)}
+              onRenamePlaylist={handleRenamePlaylist}
             />
 
             <motion.div

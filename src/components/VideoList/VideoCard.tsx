@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PlayCircle, CheckCircle2, ChevronDown, 
@@ -22,6 +22,39 @@ interface VideoCardProps {
   parseISODuration: (duration: string) => number;
 }
 
+// Global YouTube API Loader Manager
+let ytApiLoaded = false;
+let ytApiCallbacks: (() => void)[] = [];
+
+if (typeof window !== 'undefined') {
+  if ((window as any).YT && (window as any).YT.Player) {
+    ytApiLoaded = true;
+  } else {
+    const prevReady = (window as any).onYouTubeIframeAPIReady;
+    (window as any).onYouTubeIframeAPIReady = () => {
+      if (prevReady) prevReady();
+      ytApiLoaded = true;
+      ytApiCallbacks.forEach(cb => cb());
+      ytApiCallbacks = [];
+    };
+  }
+}
+
+const ensureYoutubeApi = (callback: () => void) => {
+  if (ytApiLoaded || ((window as any).YT && (window as any).YT.Player)) {
+    callback();
+    return;
+  }
+  ytApiCallbacks.push(callback);
+  
+  if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    const firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+  }
+};
+
 const itemVariants = {
   hidden: { opacity: 0, y: 16 },
   visible: {
@@ -37,11 +70,128 @@ export function VideoCard({
   defaultSubtasks, icons, parseISODuration 
 }: VideoCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [savedTime, setSavedTime] = useState<number>(0);
+  const playerRef = useRef<any>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync isExpanded and isPlaying
+  useEffect(() => {
+    if (!isExpanded) {
+      setIsPlaying(false);
+    }
+  }, [isExpanded]);
+
+  // Read saved time from localStorage reactively
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const time = localStorage.getItem(`playlist_tracker_yt_time_${video.id}`);
+      setSavedTime(time ? parseFloat(time) : 0);
+    }
+  }, [video.id, isExpanded, isPlaying]);
+
+  // YouTube Player initialization and tracking
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    let destroyed = false;
+
+    ensureYoutubeApi(() => {
+      if (destroyed) return;
+
+      const time = localStorage.getItem(`playlist_tracker_yt_time_${video.id}`);
+      const startSeconds = time ? Math.floor(parseFloat(time)) : 0;
+
+      playerRef.current = new (window as any).YT.Player(`yt-player-${video.id}`, {
+        height: '100%',
+        width: '100%',
+        videoId: video.id,
+        playerVars: {
+          autoplay: 1,
+          enablejsapi: 1,
+          start: startSeconds > 0 ? startSeconds : undefined,
+        },
+        events: {
+          onStateChange: (event: any) => {
+            // PLAYING state is 1
+            if (event.data === 1) {
+              if (intervalRef.current) clearInterval(intervalRef.current);
+              intervalRef.current = setInterval(() => {
+                if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+                  const currentTime = playerRef.current.getCurrentTime();
+                  const duration = playerRef.current.getDuration();
+                  if (duration && currentTime >= duration - 2) {
+                    localStorage.removeItem(`playlist_tracker_yt_time_${video.id}`);
+                  } else {
+                    localStorage.setItem(`playlist_tracker_yt_time_${video.id}`, currentTime.toString());
+                  }
+                }
+              }, 1000);
+            } else {
+              // Paused or other states
+              if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+              }
+              if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+                const currentTime = playerRef.current.getCurrentTime();
+                const duration = playerRef.current.getDuration();
+                if (duration && currentTime >= duration - 2) {
+                  localStorage.removeItem(`playlist_tracker_yt_time_${video.id}`);
+                } else {
+                  localStorage.setItem(`playlist_tracker_yt_time_${video.id}`, currentTime.toString());
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+
+    return () => {
+      destroyed = true;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (playerRef.current) {
+        try {
+          if (typeof playerRef.current.getCurrentTime === 'function') {
+            const currentTime = playerRef.current.getCurrentTime();
+            const duration = playerRef.current.getDuration();
+            if (duration && currentTime >= duration - 2) {
+              localStorage.removeItem(`playlist_tracker_yt_time_${video.id}`);
+            } else {
+              localStorage.setItem(`playlist_tracker_yt_time_${video.id}`, currentTime.toString());
+            }
+          }
+          playerRef.current.destroy();
+        } catch (e) {
+          console.error('Error destroying player:', e);
+        }
+        playerRef.current = null;
+      }
+    };
+  }, [isPlaying, video.id]);
   
   const displaySubtasks = task.subtasks.length > 0 ? task.subtasks : defaultSubtasks;
   const isCompleted = task.completedAt !== undefined;
   const subtaskCount = displaySubtasks.filter(s => s.completed).length;
   const totalSubtasks = displaySubtasks.length;
+
+  // Helper to format playback seconds to MM:SS or H:MM:SS
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    
+    if (h > 0) {
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  const durationSeconds = video.duration ? parseISODuration(video.duration) : 0;
+  const progressPercent = durationSeconds > 0 ? (savedTime / durationSeconds) * 100 : 0;
 
   return (
     <motion.div
@@ -53,8 +203,10 @@ export function VideoCard({
         background: isCompleted && !isExpanded ? 'rgba(52, 211, 153, 0.04)' : 'var(--bg-surface)',
         opacity: isCompleted && !isExpanded ? 0.88 : 1,
         transition: 'opacity 0.25s ease, border-color 0.25s ease, background 0.25s ease',
+        position: 'relative',
       }}
     >
+
       <div
         className="flex items-center justify-between cursor-pointer"
         onClick={onToggleExpand}
@@ -118,21 +270,16 @@ export function VideoCard({
               borderTop: '1px solid var(--border-color)',
               padding: '1.375rem', display: 'flex', flexDirection: 'column', gap: '1.5rem',
             }}>
-              {/* Video Player - Optimized with Lazy Loading */}
+              {/* Video Player - Interactive with Iframe Player API */}
               <div style={{ 
                 width: '100%', aspectRatio: '16/9', borderRadius: 12, 
                 overflow: 'hidden', border: '1px solid var(--border-color)', 
                 background: '#000', position: 'relative' 
               }}>
                 {isPlaying ? (
-                  <iframe
-                    width="100%" height="100%"
-                    src={`https://www.youtube.com/embed/${video.id}?autoplay=1&enablejsapi=1`}
-                    title="YouTube video player"
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  ></iframe>
+                  <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                    <div id={`yt-player-${video.id}`} style={{ width: '100%', height: '100%' }} />
+                  </div>
                 ) : (
                   <div 
                     style={{ width: '100%', height: '100%', cursor: 'pointer', position: 'relative' }}
@@ -143,6 +290,36 @@ export function VideoCard({
                       alt={video.title}
                       style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.6 }}
                     />
+                    
+                    {/* Glassmorphism Resume Badge */}
+                    {savedTime > 0 && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '12px',
+                        left: '12px',
+                        background: 'rgba(15, 23, 42, 0.75)',
+                        backdropFilter: 'blur(8px)',
+                        WebkitBackdropFilter: 'blur(8px)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '8px',
+                        padding: '5px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        zIndex: 10,
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                      }}>
+                        <div style={{
+                          width: 6, height: 6, borderRadius: '50%',
+                          background: 'var(--accent-primary, #6366f1)',
+                          animation: 'yt-pulse 2s infinite',
+                        }} />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'rgba(255, 255, 255, 0.95)' }}>
+                          Resume at {formatTime(savedTime)}
+                        </span>
+                      </div>
+                    )}
+
                     <div style={{
                       position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
@@ -155,6 +332,26 @@ export function VideoCard({
                         <Play style={{ width: 24, height: 24, color: 'white', marginLeft: 4 }} fill="white" />
                       </div>
                     </div>
+
+                    {/* Netflix-style Progress Bar */}
+                    {progressPercent > 0 && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '4px',
+                        background: 'rgba(255, 255, 255, 0.25)',
+                        zIndex: 5,
+                      }}>
+                        <div style={{
+                          width: `${Math.min(100, progressPercent)}%`,
+                          height: '100%',
+                          background: 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)',
+                          boxShadow: '0 0 8px rgba(99, 102, 241, 0.6)',
+                        }} />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -244,6 +441,11 @@ export function VideoCard({
         .play-button-overlay:hover {
           transform: scale(1.1);
           background: var(--accent-primary) !important;
+        }
+        @keyframes yt-pulse {
+          0% { transform: scale(0.9); opacity: 0.6; }
+          50% { transform: scale(1.2); opacity: 1; }
+          100% { transform: scale(0.9); opacity: 0.6; }
         }
       `}</style>
     </motion.div>

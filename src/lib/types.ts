@@ -24,6 +24,7 @@ export interface PlaylistRecord {
   youtubePlaylistId: string;         // raw PL... ID
   addedAt: string;                   // ISO timestamp
   tasks: Record<string, TaskRecord>; // videoId → TaskRecord (isolated per playlist)
+  videoCount?: number;               // total video count fetched
 }
 
 export interface UserSettings {

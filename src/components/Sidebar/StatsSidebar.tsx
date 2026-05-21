@@ -28,6 +28,7 @@ interface StatsSidebarProps {
   onSwitchPlaylist: (id: string) => void;
   onDeletePlaylist: (id: string) => void;
   onAddPlaylist: () => void;
+  onRenamePlaylist: (id: string, name: string) => void;
 }
 
 const sidebarVariants = {
@@ -41,7 +42,8 @@ const sidebarVariants = {
 
 export function StatsSidebar({ 
   data, videos, stats, chartData, sessionCount, onPomodoroStateChange,
-  playlists, activePlaylistId, onSwitchPlaylist, onDeletePlaylist, onAddPlaylist
+  playlists, activePlaylistId, onSwitchPlaylist, onDeletePlaylist, onAddPlaylist,
+  onRenamePlaylist
 }: StatsSidebarProps) {
   const [expandedSection, setExpandedSection] = useState<'chart' | 'milestones' | 'pomodoro' | null>(null);
   const isChartExpanded = expandedSection === 'chart';
@@ -68,6 +70,7 @@ export function StatsSidebar({
         onSwitch={onSwitchPlaylist}
         onDelete={onDeletePlaylist}
         onAddPlaylist={onAddPlaylist}
+        onRename={onRenamePlaylist}
       />
 
       {/* 1. Completion Card */}

@@ -19,14 +19,25 @@ export function AuthGate({ children }: AuthGateProps) {
       return;
     }
 
+    const cleanUrlHash = () => {
+      if (typeof window !== 'undefined') {
+        const { href, pathname, search } = window.location;
+        if (href.includes('#')) {
+          window.history.replaceState(null, '', pathname + search);
+        }
+      }
+    };
+
     // Get initial session
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      if (data.session) cleanUrlHash();
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session) cleanUrlHash();
     });
 
     return () => subscription.unsubscribe();

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ListVideo, Plus, Trash2, ChevronRight } from 'lucide-react';
+import { ListVideo, Plus, Trash2, Pencil } from 'lucide-react';
 import { PlaylistRecord } from '@/lib/types';
 
 interface PlaylistSwitcherProps {
@@ -11,6 +11,7 @@ interface PlaylistSwitcherProps {
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
   onAddPlaylist: () => void;
+  onRename: (id: string, name: string) => void;
 }
 
 export function PlaylistSwitcher({
@@ -19,17 +20,29 @@ export function PlaylistSwitcher({
   onSwitch,
   onDelete,
   onAddPlaylist,
+  onRename,
 }: PlaylistSwitcherProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  
+  const handleSave = (id: string) => {
+    if (renameValue.trim()) {
+      onRename(id, renameValue.trim());
+    }
+    setRenamingId(null);
+  };
+
   const entries = Object.values(playlists).sort(
     (a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime()
   );
 
   const getProgress = (pl: PlaylistRecord) => {
     const tasks = Object.values(pl.tasks);
-    if (tasks.length === 0) return 0;
+    const total = pl.videoCount || tasks.length;
+    if (total === 0) return 0;
     const done = tasks.filter(t => t.completedAt).length;
-    return Math.round((done / tasks.length) * 100);
+    return Math.min(100, Math.round((done / total) * 100));
   };
 
   return (
@@ -89,11 +102,11 @@ export function PlaylistSwitcher({
                   // Normal playlist row
                   <div
                     className="playlist-row"
-                    onClick={() => onSwitch(pl.id)}
+                    onClick={() => renamingId !== pl.id && onSwitch(pl.id)}
                     style={{
                       padding: '0.5rem 0.625rem',
                       borderRadius: 10,
-                      cursor: 'pointer',
+                      cursor: renamingId === pl.id ? 'default' : 'pointer',
                       border: `1px solid ${isActive ? 'var(--accent-primary)' : 'transparent'}`,
                       background: isActive ? 'var(--accent-light)' : 'transparent',
                       transition: 'all 0.2s ease',
@@ -102,26 +115,65 @@ export function PlaylistSwitcher({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                      <span style={{
-                        fontSize: '0.8125rem', fontWeight: isActive ? 600 : 500,
-                        color: isActive ? 'var(--accent-hover)' : 'var(--text-primary)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        flex: 1, minWidth: 0,
-                      }}>
-                        {pl.name}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-                        <span style={{ fontSize: '0.6875rem', fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)', fontWeight: 600 }}>
-                          {progress}%
-                        </span>
-                        <button
-                          className="pl-delete-btn"
-                          onClick={e => { e.stopPropagation(); setConfirmDelete(pl.id); }}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', opacity: 0, transition: 'opacity 0.15s' }}
-                        >
-                          <Trash2 style={{ width: 12, height: 12 }} />
-                        </button>
-                      </div>
+                      {renamingId === pl.id ? (
+                        <input
+                          type="text"
+                          value={renameValue}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onBlur={() => handleSave(pl.id)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleSave(pl.id);
+                            if (e.key === 'Escape') setRenamingId(null);
+                          }}
+                          autoFocus
+                          onClick={e => e.stopPropagation()}
+                          style={{
+                            fontSize: '0.8125rem',
+                            fontWeight: isActive ? 600 : 500,
+                            color: 'var(--text-primary)',
+                            background: 'var(--bg-surface-2)',
+                            border: '1px solid var(--accent-primary)',
+                            borderRadius: 6,
+                            padding: '0.1rem 0.35rem',
+                            width: '100%',
+                            outline: 'none',
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <span style={{
+                            fontSize: '0.8125rem', fontWeight: isActive ? 600 : 500,
+                            color: isActive ? 'var(--accent-hover)' : 'var(--text-primary)',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            flex: 1, minWidth: 0,
+                          }}>
+                            {pl.name}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                            <span style={{ fontSize: '0.6875rem', fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)', fontWeight: 600 }}>
+                              {progress}%
+                            </span>
+                            <button
+                              className="pl-edit-btn"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setRenamingId(pl.id);
+                                setRenameValue(pl.name);
+                              }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', opacity: 0, transition: 'opacity 0.15s' }}
+                            >
+                              <Pencil style={{ width: 12, height: 12 }} />
+                            </button>
+                            <button
+                              className="pl-delete-btn"
+                              onClick={e => { e.stopPropagation(); setConfirmDelete(pl.id); }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', opacity: 0, transition: 'opacity 0.15s' }}
+                            >
+                              <Trash2 style={{ width: 12, height: 12 }} />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                     {/* Progress bar */}
                     <div style={{ height: 3, borderRadius: 99, background: 'var(--border-color)', overflow: 'hidden' }}>
@@ -163,8 +215,9 @@ export function PlaylistSwitcher({
 
       <style>{`
         .playlist-row:hover { background: var(--bg-hover) !important; }
-        .playlist-row:hover .pl-delete-btn { opacity: 0.6 !important; }
+        .playlist-row:hover .pl-delete-btn, .playlist-row:hover .pl-edit-btn { opacity: 0.6 !important; }
         .pl-delete-btn:hover { opacity: 1 !important; color: #f87171 !important; }
+        .pl-edit-btn:hover { opacity: 1 !important; color: var(--accent-primary) !important; }
         .add-playlist-btn:hover { border-color: var(--accent-primary) !important; color: var(--accent-primary) !important; background: var(--accent-light) !important; }
       `}</style>
     </div>

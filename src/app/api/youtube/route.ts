@@ -62,6 +62,24 @@ async function fetchPlaylistVideosRaw(playlistId: string): Promise<Video[]> {
   return valid;
 }
 
+async function fetchPlaylistTitle(playlistId: string): Promise<string> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) return '';
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${playlistId}&key=${apiKey}`;
+    const response = await fetch(url, { next: { revalidate: 3600 } });
+    if (!response.ok) return '';
+    const data = await response.json();
+    if (data.items && data.items.length > 0) {
+      return data.items[0].snippet.title || '';
+    }
+  } catch (e) {
+    console.error('Failed to fetch playlist title', e);
+  }
+  return '';
+}
+
 export async function GET(request: NextRequest) {
   const playlistId = request.nextUrl.searchParams.get('playlistId');
 
@@ -73,8 +91,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const videos = await fetchPlaylistVideosRaw(playlistId);
-    return Response.json(videos);
+    const [videos, title] = await Promise.all([
+      fetchPlaylistVideosRaw(playlistId),
+      fetchPlaylistTitle(playlistId),
+    ]);
+    return Response.json({ title, videos });
   } catch (err: any) {
     console.error('[youtube route]', err);
     return Response.json(
@@ -83,3 +104,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

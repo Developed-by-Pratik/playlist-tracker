@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Link2, Loader2, CheckCircle2, AlertCircle, ListVideo, Plus } from 'lucide-react';
+import { X, Loader2, CheckCircle2, AlertCircle, ListVideo, Plus } from 'lucide-react';
 import { Video } from '@/lib/types';
 
 interface AddPlaylistModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (name: string, playlistId: string) => void;
+  onAdd: (name: string, playlistId: string, videoCount: number) => void;
 }
 
 function extractPlaylistId(input: string): string | null {
@@ -62,10 +62,12 @@ export function AddPlaylistModal({ isOpen, onClose, onAdd }: AddPlaylistModalPro
           const err = await res.json();
           throw new Error(err.error || 'Failed to fetch playlist');
         }
-        const videos: Video[] = await res.json();
+        const data = await res.json();
+        const videos: Video[] = data.videos || [];
+        const playlistTitle: string = data.title || '';
         if (videos.length === 0) throw new Error('Playlist is empty or private.');
         setPreview({ video: videos[0], total: videos.length });
-        if (!name) setName(`Playlist (${videos.length} videos)`);
+        if (!name) setName(playlistTitle || `Playlist (${videos.length} videos)`);
         setFetchState('success');
         setErrorMsg('');
       } catch (e: any) {
@@ -74,13 +76,14 @@ export function AddPlaylistModal({ isOpen, onClose, onAdd }: AddPlaylistModalPro
         setPreview(null);
       }
     }, 700);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input]);
 
   const handleAdd = async () => {
     const playlistId = extractPlaylistId(input);
-    if (!playlistId || fetchState !== 'success') return;
+    if (!playlistId || fetchState !== 'success' || !preview) return;
     setAdding(true);
-    onAdd(name.trim() || 'My Playlist', playlistId);
+    onAdd(name.trim() || 'My Playlist', playlistId, preview.total);
     setAdding(false);
     onClose();
   };

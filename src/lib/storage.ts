@@ -7,10 +7,7 @@ const STORAGE_KEY = 'playlist_tracker_data';
 const LEGACY_PLAYLIST_ID = 'PLQEaRBV9gAFsR15tNo2QLF9d2qc-c018p';
 
 export const defaultSubTasks: SubTask[] = [
-  { id: 'watchVideo', label: 'Watch Module', completed: false },
-  { id: 'programPractice', label: 'Code Practice', completed: false },
-  { id: 'postLinkedIn', label: 'Community Post', completed: false },
-  { id: 'updateNaukri', label: 'Profile Update', completed: false },
+  { id: 'watchVideo', label: 'Watch Video', completed: false },
 ];
 
 const defaultData: AppData = {
@@ -82,7 +79,7 @@ export const saveData = (data: AppData): void => {
 
 // ── Playlist CRUD ──────────────────────────────────────────────────────────────
 
-export const addPlaylist = (name: string, youtubePlaylistId: string): AppData => {
+export const addPlaylist = (name: string, youtubePlaylistId: string, videoCount?: number): AppData => {
   const data = loadData();
   const id = crypto.randomUUID();
   const playlist: PlaylistRecord = {
@@ -91,6 +88,7 @@ export const addPlaylist = (name: string, youtubePlaylistId: string): AppData =>
     youtubePlaylistId,
     addedAt: new Date().toISOString(),
     tasks: {},
+    videoCount,
   };
   data.playlists[id] = playlist;
   if (!data.activePlaylistId) data.activePlaylistId = id;
@@ -122,6 +120,15 @@ export const renamePlaylist = (playlistId: string, name: string): AppData => {
   const data = loadData();
   if (data.playlists[playlistId]) {
     data.playlists[playlistId].name = name.trim();
+    saveData(data);
+  }
+  return data;
+};
+
+export const updatePlaylistVideoCount = (playlistId: string, count: number): AppData => {
+  const data = loadData();
+  if (data.playlists[playlistId] && data.playlists[playlistId].videoCount !== count) {
+    data.playlists[playlistId].videoCount = count;
     saveData(data);
   }
   return data;
