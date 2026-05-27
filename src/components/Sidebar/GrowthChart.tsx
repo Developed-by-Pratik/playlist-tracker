@@ -41,7 +41,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
   const baseY = PAD.top + innerH;
 
   const getColor = (count: number) =>
-    count === 0 ? 'var(--border-color-strong)' : count >= 8 ? '#34d399' : count >= 4 ? '#fbbf24' : '#f87171';
+    count === 0 ? 'var(--border-color-strong)' : count >= 4 ? '#34d399' : count >= 3 ? '#fbbf24' : '#f87171';
 
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
 
@@ -56,7 +56,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
             </span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {[['#f87171', '1-3'], ['#fbbf24', '4-7'], ['#34d399', '8+']].map(([color, label]) => (
+            {[['#f87171', '1-2'], ['#fbbf24', '3'], ['#34d399', '4+']].map(([color, label]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: color }} />
                 <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
@@ -79,8 +79,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
           <defs>
             {pts.slice(0, -1).map((p, i) => {
               const next = pts[i + 1];
-              const avgCount = (p.count + next.count) / 2;
-              const color = getColor(avgCount);
+              const color = getColor(next.count);
               return (
                 <linearGradient key={i} id={`seg-${i}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={color} stopOpacity="0.85" />

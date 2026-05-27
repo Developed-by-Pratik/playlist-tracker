@@ -1,4 +1,4 @@
-import { AppData, TaskRecord, SubTask, PlaylistRecord } from './types';
+import { AppData, TaskRecord, SubTask, PlaylistRecord, DailyGoal } from './types';
 import { syncToCloud } from './cloud-storage';
 
 const STORAGE_KEY = 'playlist_tracker_data';
@@ -14,6 +14,25 @@ const defaultData: AppData = {
   settings: { youtubeApiKey: '' },
   playlists: {},
   activePlaylistId: null,
+};
+
+export const getLocalDateString = (): string => {
+  return new Date().toLocaleDateString('en-CA');
+};
+
+export const checkAndRefreshDailyGoals = (data: AppData): AppData => {
+  if (!data.dailyGoals) return data;
+  const todayStr = getLocalDateString();
+  if (data.dailyGoals.lastRefreshedDate !== todayStr) {
+    const completedCount = data.dailyGoals.goals.filter(g => g.completed).length;
+    if (completedCount > 0) {
+      if (!data.dailyGoalsHistory) data.dailyGoalsHistory = {};
+      data.dailyGoalsHistory[data.dailyGoals.lastRefreshedDate] = completedCount;
+    }
+    data.dailyGoals.goals = data.dailyGoals.goals.map(g => ({ ...g, completed: false }));
+    data.dailyGoals.lastRefreshedDate = todayStr;
+  }
+  return data;
 };
 
 /** Apply data migrations */
@@ -52,6 +71,46 @@ function migrateData(parsed: any): AppData {
   // Ensure required fields exist
   if (!parsed.playlists) parsed.playlists = {};
   if (!('activePlaylistId' in parsed)) parsed.activePlaylistId = null;
+
+  // Step 3: Filter out legacy daily subtasks from video cards so they only have watchVideo or custom ones!
+  if (parsed.playlists && typeof parsed.playlists === 'object') {
+    Object.keys(parsed.playlists).forEach(pid => {
+      const playlist = parsed.playlists[pid];
+      if (playlist && playlist.tasks && typeof playlist.tasks === 'object') {
+        Object.keys(playlist.tasks).forEach(vid => {
+          const t = playlist.tasks[vid];
+          if (t && Array.isArray(t.subtasks)) {
+            t.subtasks = t.subtasks.filter((s: any) =>
+              s.id !== 'programPractice' &&
+              s.id !== 'postLinkedIn' &&
+              s.id !== 'updateNaukri'
+            );
+            // Re-calculate completion
+            const allCompleted = t.subtasks.length > 0 && t.subtasks.every((s: any) => s.completed);
+            if (allCompleted && !t.completedAt) {
+              t.completedAt = new Date().toISOString();
+            } else if (!allCompleted && t.completedAt) {
+              t.completedAt = undefined;
+            }
+          }
+        });
+      }
+    });
+  }
+
+  // Step 4: Initialize and check/refresh daily goals
+  if (!parsed.dailyGoals) {
+    parsed.dailyGoals = {
+      lastRefreshedDate: getLocalDateString(),
+      goals: [
+        { id: 'code-practice', label: 'Code Practice', completed: false },
+        { id: 'community-post', label: 'Community Post Update', completed: false },
+        { id: 'naukri-update', label: 'Update Naukri Profile', completed: false },
+      ],
+    };
+  } else {
+    parsed = checkAndRefreshDailyGoals(parsed);
+  }
 
   return parsed as AppData;
 }
@@ -170,5 +229,81 @@ export const updateSettings = (apiKey: string): AppData => {
   const data = loadData();
   data.settings.youtubeApiKey = apiKey;
   saveData(data);
+  return data;
+};
+
+// ── Daily Goals CRUD ──────────────────────────────────────────────────────────
+
+export const toggleDailyGoal = (goalId: string, existingData?: AppData): AppData => {
+  let data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
+  if (!data.dailyGoals) {
+    data.dailyGoals = {
+      lastRefreshedDate: getLocalDateString(),
+      goals: [
+        { id: 'code-practice', label: 'Code Practice', completed: false },
+        { id: 'community-post', label: 'Community Post Update', completed: false },
+        { id: 'naukri-update', label: 'Update Naukri Profile', completed: false },
+      ],
+    };
+  }
+
+  data = checkAndRefreshDailyGoals(data);
+
+  data.dailyGoals.goals = data.dailyGoals.goals.map((g: any) =>
+    g.id === goalId ? { ...g, completed: !g.completed } : g
+  );
+
+  saveData(data);
+  return data;
+};
+
+export const addDailyGoal = (label: string, existingData?: AppData): AppData => {
+  let data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
+  if (!data.dailyGoals) {
+    data.dailyGoals = {
+      lastRefreshedDate: getLocalDateString(),
+      goals: [],
+    };
+  }
+
+  data = checkAndRefreshDailyGoals(data);
+
+  const newGoal = {
+    id: `daily-${Date.now()}`,
+    label: label.trim(),
+    completed: false,
+  };
+  data.dailyGoals.goals.push(newGoal);
+
+  saveData(data);
+  return data;
+};
+
+export const deleteDailyGoal = (goalId: string, existingData?: AppData): AppData => {
+  let data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
+  if (data.dailyGoals) {
+    data = checkAndRefreshDailyGoals(data);
+    data.dailyGoals.goals = data.dailyGoals.goals.filter((g: any) => g.id !== goalId);
+    saveData(data);
+  }
+  return data;
+};
+
+export const resetDailyGoalsCompleted = (existingData?: AppData): AppData => {
+  const data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
+  if (data.dailyGoals) {
+    data.dailyGoals.goals = data.dailyGoals.goals.map((g: any) => ({ ...g, completed: false }));
+    data.dailyGoals.lastRefreshedDate = getLocalDateString();
+    saveData(data);
+  }
+  return data;
+};
+
+export const reorderDailyGoals = (newGoals: DailyGoal[], existingData?: AppData): AppData => {
+  const data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
+  if (data.dailyGoals) {
+    data.dailyGoals.goals = newGoals;
+    saveData(data);
+  }
   return data;
 };

@@ -31,10 +31,24 @@ export interface UserSettings {
   youtubeApiKey: string; // kept for compat, unused (server key handles all fetches)
 }
 
+export interface DailyGoal {
+  id: string;
+  label: string;
+  completed: boolean;
+}
+
+export interface DailyGoalsRecord {
+  lastRefreshedDate: string;
+  goals: DailyGoal[];
+}
+
 export interface AppData {
   settings: UserSettings;
   playlists: Record<string, PlaylistRecord>; // playlistId → PlaylistRecord
   activePlaylistId: string | null;
+  dailyGoals?: DailyGoalsRecord;
+  dailyGoalsHistory?: Record<string, number>;
   tasks?: Record<string, TaskRecord>; // LEGACY — only present during migration
   updatedAt?: string; // ISO timestamp of last change
 }
+

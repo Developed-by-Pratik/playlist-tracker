@@ -30,11 +30,26 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 
 const TABLE = 'tracker_data';
 
+let cachedSyncId: string | null = null;
+
+if (typeof window !== 'undefined' && isSupabaseConfigured() && supabase) {
+  // Prime the cache and listen for updates reactively
+  supabase.auth.getSession().then(({ data }) => {
+    cachedSyncId = data.session?.user?.id ?? null;
+  });
+  supabase.auth.onAuthStateChange((event, session) => {
+    cachedSyncId = session?.user?.id ?? null;
+  });
+}
+
 /** Get the current user's auth UID to use as sync_id */
 export async function getSyncId(): Promise<string | null> {
   if (!isSupabaseConfigured() || !supabase) return null;
+  if (cachedSyncId) return cachedSyncId;
+
   const { data } = await supabase.auth.getUser();
-  return data.user?.id ?? null;
+  cachedSyncId = data.user?.id ?? null;
+  return cachedSyncId;
 }
 
 export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'unconfigured' | 'offline';
@@ -72,14 +87,17 @@ export function mergeData(local: AppData, remote: AppData): AppData {
   const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
   const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
 
-  if (localTime >= remoteTime) {
-    // Local copy is newer (or they are identical), so local wins.
+  if (localTime > remoteTime) {
+    // Local copy is strictly newer, so local wins.
     // Sync local to the cloud to make sure remote gets it.
     syncToCloud(local).catch(err => console.warn('[cloud-sync] push local to cloud failed:', err));
     return local;
-  } else {
-    // Remote copy is newer, remote wins.
+  } else if (remoteTime > localTime) {
+    // Remote copy is strictly newer, remote wins.
     return remote;
+  } else {
+    // Already in sync — do NOT push to cloud again to avoid infinite realtime loops!
+    return local;
   }
 }
 
