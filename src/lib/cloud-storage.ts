@@ -25,7 +25,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabase';
-import { AppData } from './types';
+import { AppData, PlaylistRecord, TaskRecord, SubTask, DailyGoal } from './types';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 const TABLE = 'tracker_data';
@@ -87,18 +87,176 @@ export function mergeData(local: AppData, remote: AppData): AppData {
   const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
   const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
 
-  if (localTime > remoteTime) {
-    // Local copy is strictly newer, so local wins.
-    // Sync local to the cloud to make sure remote gets it.
-    syncToCloud(local).catch(err => console.warn('[cloud-sync] push local to cloud failed:', err));
-    return local;
-  } else if (remoteTime > localTime) {
-    // Remote copy is strictly newer, remote wins.
-    return remote;
-  } else {
-    // Already in sync — do NOT push to cloud again to avoid infinite realtime loops!
+  // If one of them has never been updated/saved, return the other.
+  if (!local.updatedAt) return remote;
+  if (!remote.updatedAt) return local;
+
+  // If timestamps are identical, they are already in sync.
+  if (localTime === remoteTime) {
     return local;
   }
+
+  // Determine the overall winner for scalar values (like activePlaylistId, settings)
+  const newer = localTime > remoteTime ? local : remote;
+
+  // Deep merge playlists
+  const mergedPlaylists: Record<string, PlaylistRecord> = {};
+
+  // Gather all playlist IDs from both
+  const allPlaylistIds = new Set([
+    ...Object.keys(local.playlists || {}),
+    ...Object.keys(remote.playlists || {})
+  ]);
+
+  allPlaylistIds.forEach(pid => {
+    const localPl = local.playlists?.[pid];
+    const remotePl = remote.playlists?.[pid];
+
+    if (localPl && !remotePl) {
+      // Playlist exists in local but not remote.
+      // Was it added locally after the remote's last update?
+      // Or was it deleted remotely after local added it?
+      const addedTime = new Date(localPl.addedAt).getTime();
+      if (addedTime > remoteTime) {
+        // Added locally after remote's last sync
+        mergedPlaylists[pid] = localPl;
+      } else if (localTime > remoteTime) {
+        // Local is newer, keep it
+        mergedPlaylists[pid] = localPl;
+      }
+      // Otherwise, it was probably deleted remotely, so we omit it.
+    } else if (remotePl && !localPl) {
+      // Playlist exists in remote but not local.
+      const addedTime = new Date(remotePl.addedAt).getTime();
+      if (addedTime > localTime) {
+        // Added remotely after local's last sync
+        mergedPlaylists[pid] = remotePl;
+      } else if (remoteTime > localTime) {
+        // Remote is newer, keep it
+        mergedPlaylists[pid] = remotePl;
+      }
+      // Otherwise, it was probably deleted locally, so we omit it.
+    } else if (localPl && remotePl) {
+      // Playlist exists in both. Merge their tasks!
+      const mergedTasks: Record<string, TaskRecord> = {};
+      const allVideoIds = new Set([
+        ...Object.keys(localPl.tasks || {}),
+        ...Object.keys(remotePl.tasks || {})
+      ]);
+
+      allVideoIds.forEach(vid => {
+        const localTask = localPl.tasks[vid];
+        const remoteTask = remotePl.tasks[vid];
+
+        if (localTask && !remoteTask) {
+          mergedTasks[vid] = localTask;
+        } else if (remoteTask && !localTask) {
+          mergedTasks[vid] = remoteTask;
+        } else if (localTask && remoteTask) {
+          // Merge subtasks. Match by id.
+          const subtaskMap = new Map<string, SubTask>();
+          
+          // Add remote subtasks first
+          remoteTask.subtasks.forEach(s => subtaskMap.set(s.id, { ...s }));
+          
+          // Merge local subtasks
+          localTask.subtasks.forEach(localSub => {
+            const existing = subtaskMap.get(localSub.id);
+            if (existing) {
+              // If completed in either, set as completed
+              existing.completed = existing.completed || localSub.completed;
+            } else {
+              subtaskMap.set(localSub.id, { ...localSub });
+            }
+          });
+
+          const mergedSubtasks = Array.from(subtaskMap.values());
+          const allCompleted = mergedSubtasks.length > 0 && mergedSubtasks.every(s => s.completed);
+          
+          // completedAt: take the oldest completedAt if both completed, or whichever exists
+          let completedAt = remoteTask.completedAt || localTask.completedAt;
+          if (!allCompleted) {
+            completedAt = undefined;
+          } else if (!completedAt) {
+            completedAt = new Date().toISOString();
+          }
+
+          mergedTasks[vid] = {
+            videoId: vid,
+            subtasks: mergedSubtasks,
+            completedAt
+          };
+        }
+      });
+
+      // Keep the newer metadata (e.g. name, videoCount)
+      const basePlaylist = localTime > remoteTime ? localPl : remotePl;
+      mergedPlaylists[pid] = {
+        ...basePlaylist,
+        tasks: mergedTasks
+      };
+    }
+  });
+
+  // Deep merge daily goals
+  let mergedDailyGoals = newer.dailyGoals;
+  if (local.dailyGoals && remote.dailyGoals) {
+    const localGoalsDate = local.dailyGoals.lastRefreshedDate;
+    const remoteGoalsDate = remote.dailyGoals.lastRefreshedDate;
+
+    if (localGoalsDate === remoteGoalsDate) {
+      // Same day, merge the checklist statuses
+      const goalsMap = new Map<string, DailyGoal>();
+      remote.dailyGoals.goals.forEach(g => goalsMap.set(g.id, { ...g }));
+      local.dailyGoals.goals.forEach(lg => {
+        const existing = goalsMap.get(lg.id);
+        if (existing) {
+          existing.completed = existing.completed || lg.completed;
+          existing.label = lg.label; // take local label
+        } else {
+          goalsMap.set(lg.id, { ...lg });
+        }
+      });
+      mergedDailyGoals = {
+        lastRefreshedDate: localGoalsDate,
+        goals: Array.from(goalsMap.values())
+      };
+    } else {
+      // Different days, take the newer day
+      mergedDailyGoals = localGoalsDate > remoteGoalsDate ? local.dailyGoals : remote.dailyGoals;
+    }
+  }
+
+  // Deep merge daily goals history
+  const mergedHistory: Record<string, number> = {};
+  const allHistoryDates = new Set([
+    ...Object.keys(local.dailyGoalsHistory || {}),
+    ...Object.keys(remote.dailyGoalsHistory || {})
+  ]);
+  allHistoryDates.forEach(date => {
+    const localVal = local.dailyGoalsHistory?.[date] || 0;
+    const remoteVal = remote.dailyGoalsHistory?.[date] || 0;
+    mergedHistory[date] = Math.max(localVal, remoteVal);
+  });
+
+  // Assemble the merged AppData
+  const mergedData: AppData = {
+    settings: {
+      youtubeApiKey: newer.settings.youtubeApiKey
+    },
+    playlists: mergedPlaylists,
+    activePlaylistId: newer.activePlaylistId,
+    dailyGoals: mergedDailyGoals,
+    dailyGoalsHistory: Object.keys(mergedHistory).length > 0 ? mergedHistory : undefined,
+    updatedAt: new Date().toISOString()
+  };
+
+  // If local was the winner, but we resolved merges, or vice-versa, make sure to sync back
+  if (localTime > remoteTime || JSON.stringify(mergedData) !== JSON.stringify(remote)) {
+    syncToCloud(mergedData).catch(err => console.warn('[cloud-sync] push merged data failed:', err));
+  }
+
+  return mergedData;
 }
 
 /**

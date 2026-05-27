@@ -40,24 +40,34 @@ async function fetchPlaylistVideosRaw(playlistId: string): Promise<Video[]> {
     v => v.title !== 'Private video' && v.title !== 'Deleted video'
   );
 
-  // Fetch durations in batches of 50
+  // Fetch durations in batches of 50 in parallel
+  const batches: string[] = [];
   for (let i = 0; i < valid.length; i += 50) {
-    const batch = valid
-      .slice(i, i + 50)
-      .map(v => v.id)
-      .join(',');
-    const durRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${apiKey}`,
-      { next: { revalidate: 3600 } }
-    );
-    if (durRes.ok) {
-      const durData = await durRes.json();
+    batches.push(valid.slice(i, i + 50).map(v => v.id).join(','));
+  }
+
+  const fetchPromises = batches.map(async (batch) => {
+    try {
+      const durRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${apiKey}`,
+        { next: { revalidate: 3600 } }
+      );
+      return durRes.ok ? durRes.json() : null;
+    } catch (e) {
+      console.error('Failed to fetch duration batch:', e);
+      return null;
+    }
+  });
+
+  const results = await Promise.all(fetchPromises);
+  results.forEach(durData => {
+    if (durData?.items) {
       durData.items.forEach((item: any) => {
         const video = valid.find(v => v.id === item.id);
         if (video) video.duration = item.contentDetails.duration;
       });
     }
-  }
+  });
 
   return valid;
 }

@@ -121,8 +121,10 @@ export const VideoCard = memo(function VideoCard({
                   const duration = playerRef.current.getDuration();
                   if (duration && currentTime >= duration - 2) {
                     localStorage.removeItem(`playlist_tracker_yt_time_${video.id}`);
+                    setSavedTime(0);
                   } else {
                     localStorage.setItem(`playlist_tracker_yt_time_${video.id}`, currentTime.toString());
+                    setSavedTime(currentTime);
                   }
                 }
               }, 1000);
@@ -137,8 +139,10 @@ export const VideoCard = memo(function VideoCard({
                 const duration = playerRef.current.getDuration();
                 if (duration && currentTime >= duration - 2) {
                   localStorage.removeItem(`playlist_tracker_yt_time_${video.id}`);
+                  setSavedTime(0);
                 } else {
                   localStorage.setItem(`playlist_tracker_yt_time_${video.id}`, currentTime.toString());
+                  setSavedTime(currentTime);
                 }
               }
             }

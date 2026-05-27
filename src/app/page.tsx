@@ -51,6 +51,7 @@ export default function Home() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [videosLoading, setVideosLoading] = useState(false);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(
@@ -63,6 +64,12 @@ export default function Home() {
 
   const isRemoteUpdate = useRef(false);
   const lastPlaylistId = useRef<string | null>(null);
+
+  // Keep a stable ref to data to avoid re-creating callbacks that depend on it
+  const dataRef = useRef<AppData | null>(null);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   useEffect(() => {
     const handleScroll = () => setShowScrollTop(window.scrollY > 400);
@@ -112,18 +119,26 @@ export default function Home() {
     if (!data) return;
     const activeId = data.activePlaylistId;
     const playlist = activeId ? data.playlists[activeId] : null;
-    if (!playlist) { setVideos([]); return; }
+    if (!playlist) { setVideos([]); setYoutubeError(null); return; }
     if (lastPlaylistId.current === activeId) return; // Already loaded
     lastPlaylistId.current = activeId;
 
     setVideosLoading(true);
     setExpandedVideoId(null);
+    setYoutubeError(null);
     fetch(`/api/youtube?playlistId=${playlist.youtubePlaylistId}`)
-      .then(r => r.json())
+      .then(async r => {
+        if (!r.ok) {
+          const errData = await r.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to fetch playlist videos');
+        }
+        return r.json();
+      })
       .then(resData => {
         const vids = resData && typeof resData === 'object' && 'videos' in resData ? resData.videos : resData;
         if (Array.isArray(vids)) {
           setVideos(vids);
+          setYoutubeError(null);
           // If the stored videoCount does not match or is undefined, update it!
           if (playlist.videoCount !== vids.length) {
             const updated = updatePlaylistVideoCount(playlist.id, vids.length);
@@ -131,9 +146,13 @@ export default function Home() {
           }
         } else {
           setVideos([]);
+          setYoutubeError('The playlist was empty or returned invalid data.');
         }
       })
-      .catch(() => setVideos([]))
+      .catch((err) => {
+        setVideos([]);
+        setYoutubeError(err.message || 'Failed to connect to YouTube API. Please verify playlist visibility or backend API configuration.');
+      })
       .finally(() => setVideosLoading(false));
   }, [data?.activePlaylistId]);
 
@@ -152,42 +171,42 @@ export default function Home() {
   }, []);
 
   const handleSubtaskToggle = useCallback((videoId: string, subtaskId: string) => {
-    setData(prev => {
-      if (!prev?.activePlaylistId) return prev;
-      const activeId = prev.activePlaylistId;
-      const activeTasks = prev.playlists[activeId]?.tasks || {};
-      const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
-      const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
-      const updatedSubtasks = subtasksToUse.map(s =>
-        s.id === subtaskId ? { ...s, completed: !s.completed } : s
-      );
-      return updateTask(activeId, videoId, { subtasks: updatedSubtasks }, prev);
-    });
+    const currentData = dataRef.current;
+    if (!currentData?.activePlaylistId) return;
+    const activeId = currentData.activePlaylistId;
+    const activeTasks = currentData.playlists[activeId]?.tasks || {};
+    const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+    const updatedSubtasks = subtasksToUse.map(s =>
+      s.id === subtaskId ? { ...s, completed: !s.completed } : s
+    );
+    const nextData = updateTask(activeId, videoId, { subtasks: updatedSubtasks }, currentData);
+    setData(nextData);
   }, []);
 
   const handleAddSubtask = useCallback((videoId: string, label: string) => {
     if (!label.trim()) return;
-    setData(prev => {
-      if (!prev?.activePlaylistId) return prev;
-      const activeId = prev.activePlaylistId;
-      const activeTasks = prev.playlists[activeId]?.tasks || {};
-      const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
-      const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
-      const newSubtask = { id: `custom-${Date.now()}`, label, completed: false };
-      return updateTask(activeId, videoId, { subtasks: [...subtasksToUse, newSubtask] }, prev);
-    });
+    const currentData = dataRef.current;
+    if (!currentData?.activePlaylistId) return;
+    const activeId = currentData.activePlaylistId;
+    const activeTasks = currentData.playlists[activeId]?.tasks || {};
+    const currentTask = activeTasks[videoId] || { videoId, subtasks: DEFAULT_SUBTASKS };
+    const subtasksToUse = currentTask.subtasks.length > 0 ? currentTask.subtasks : DEFAULT_SUBTASKS;
+    const newSubtask = { id: `custom-${Date.now()}`, label, completed: false };
+    const nextData = updateTask(activeId, videoId, { subtasks: [...subtasksToUse, newSubtask] }, currentData);
+    setData(nextData);
   }, []);
 
   const handleDeleteSubtask = useCallback((videoId: string, subtaskId: string) => {
-    setData(prev => {
-      if (!prev?.activePlaylistId) return prev;
-      const activeId = prev.activePlaylistId;
-      const activeTasks = prev.playlists[activeId]?.tasks || {};
-      const currentTask = activeTasks[videoId];
-      if (!currentTask) return prev;
-      const updatedSubtasks = currentTask.subtasks.filter(s => s.id !== subtaskId);
-      return updateTask(activeId, videoId, { subtasks: updatedSubtasks }, prev);
-    });
+    const currentData = dataRef.current;
+    if (!currentData?.activePlaylistId) return;
+    const activeId = currentData.activePlaylistId;
+    const activeTasks = currentData.playlists[activeId]?.tasks || {};
+    const currentTask = activeTasks[videoId];
+    if (!currentTask) return;
+    const updatedSubtasks = currentTask.subtasks.filter(s => s.id !== subtaskId);
+    const nextData = updateTask(activeId, videoId, { subtasks: updatedSubtasks }, currentData);
+    setData(nextData);
   }, []);
 
   const handleAddPlaylist = useCallback((name: string, youtubePlaylistId: string) => {
@@ -209,36 +228,42 @@ export default function Home() {
   }, []);
 
   const handleSwitchPlaylist = useCallback((playlistId: string) => {
-    if (!data || data.activePlaylistId === playlistId) return;
+    const currentData = dataRef.current;
+    if (!currentData || currentData.activePlaylistId === playlistId) return;
     lastPlaylistId.current = null; // Force video re-fetch
     const updated = setActivePlaylist(playlistId);
     setData({ ...updated });
     setVideos([]);
-  }, [data]);
+  }, []);
 
   const handlePomodoroStateChange = (state: 'focus' | 'break' | 'idle') => {
     if (state === 'break') setSessionCount(prev => prev + 1);
   };
 
   const handleToggleDailyGoal = useCallback((goalId: string) => {
-    setData(prev => toggleDailyGoal(goalId, prev || undefined));
+    const nextData = toggleDailyGoal(goalId, dataRef.current || undefined);
+    setData(nextData);
   }, []);
 
   const handleAddDailyGoal = useCallback((label: string) => {
     if (!label.trim()) return;
-    setData(prev => addDailyGoal(label, prev || undefined));
+    const nextData = addDailyGoal(label, dataRef.current || undefined);
+    setData(nextData);
   }, []);
 
   const handleDeleteDailyGoal = useCallback((goalId: string) => {
-    setData(prev => deleteDailyGoal(goalId, prev || undefined));
+    const nextData = deleteDailyGoal(goalId, dataRef.current || undefined);
+    setData(nextData);
   }, []);
 
   const handleResetDailyGoals = useCallback(() => {
-    setData(prev => resetDailyGoalsCompleted(prev || undefined));
+    const nextData = resetDailyGoalsCompleted(dataRef.current || undefined);
+    setData(nextData);
   }, []);
 
   const handleReorderDailyGoals = useCallback((newGoals: DailyGoal[]) => {
-    setData(prev => reorderDailyGoals(newGoals, prev || undefined));
+    const nextData = reorderDailyGoals(newGoals, dataRef.current || undefined);
+    setData(nextData);
   }, []);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -459,13 +484,60 @@ export default function Home() {
                 })}
               </div>
 
-              {activeTab === 'modules' ? (
-                videosLoading ? (
+              {/* Tab 1: Modules Container (Kept Mounted for instantaneous switches and video continuation) */}
+              <motion.div
+                animate={{
+                  opacity: activeTab === 'modules' ? 1 : 0,
+                  y: activeTab === 'modules' ? 0 : 8,
+                }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                style={{
+                  display: activeTab === 'modules' ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  width: '100%'
+                }}
+              >
+                {videosLoading ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     {[1,2,3,4].map(i => (
-                      <div key={i} style={{ height: 70, borderRadius: 20, background: 'var(--bg-surface-2)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                      <div key={i} className="skeleton-shimmer" style={{ height: 70, borderRadius: 20 }} />
                     ))}
                   </div>
+                ) : youtubeError ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{
+                      padding: '3rem 2rem',
+                      background: 'var(--bg-surface-solid)',
+                      border: '1px solid rgba(248, 113, 113, 0.15)',
+                      borderRadius: 20,
+                      textAlign: 'center',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '1rem',
+                      boxShadow: 'var(--shadow-md)',
+                      position: 'relative',
+                    }}
+                  >
+                    <div style={{
+                      width: 48, height: 48, borderRadius: '50%',
+                      background: 'rgba(248, 113, 113, 0.1)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#f87171',
+                      boxShadow: '0 0 15px rgba(248, 113, 113, 0.15)'
+                    }}>
+                      <Zap style={{ width: 22, height: 22 }} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1.0625rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>YouTube Connection Issue</h3>
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', maxWidth: '440px', margin: 0, lineHeight: 1.5 }}>
+                        {youtubeError}
+                      </p>
+                    </div>
+                  </motion.div>
                 ) : (
                   <>
                     {filteredVideos.map((video, index) => {
@@ -510,190 +582,197 @@ export default function Home() {
                       </motion.div>
                     )}
                   </>
-                )
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.35, ease: 'easeOut' }}
-                  style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}
-                >
-                  {/* Daily Goals Summary Card */}
-                  <div className="card" style={{
-                    padding: '1.5rem',
-                    background: 'var(--gradient-card), var(--bg-surface-solid)',
-                    border: '1px solid var(--border-color)',
-                    position: 'relative',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '1.25rem'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <h2 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '4px', color: 'var(--text-primary)' }}>Daily Progress</h2>
-                        <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-                          {data?.dailyGoals?.goals && data.dailyGoals.goals.length > 0 && data.dailyGoals.goals.every(g => g.completed)
-                            ? '🎉 Spectacular! You have completed all your goals today!' 
-                            : `Complete your habits and routines. Completed ${data?.dailyGoals?.goals?.filter(g => g.completed).length || 0} of ${data?.dailyGoals?.goals?.length || 0} today.`
-                          }
-                        </p>
-                      </div>
-                      {data?.dailyGoals?.goals && data.dailyGoals.goals.length > 0 && (
-                        <button 
-                          onClick={handleResetDailyGoals}
-                          className="btn-outline"
-                          style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', gap: '4px', height: 'fit-content' }}
-                          title="Reset completions manually for today"
-                        >
-                          <RotateCcw style={{ width: 12, height: 12 }} />
-                          <span>Reset</span>
-                        </button>
-                      )}
-                    </div>
+                )}
+              </motion.div>
 
-                    {data?.dailyGoals?.goals && data.dailyGoals.goals.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                          <span>COMPLETION RATE</span>
-                          <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
-                            {Math.round(((data?.dailyGoals?.goals?.filter(g => g.completed).length || 0) / (data?.dailyGoals?.goals?.length || 1)) * 100)}%
-                          </span>
-                        </div>
-                        <div style={{ height: '8px', background: 'var(--bg-surface-2)', borderRadius: '99px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.round(((data?.dailyGoals?.goals?.filter(g => g.completed).length || 0) / (data?.dailyGoals?.goals?.length || 1)) * 100)}%` }}
-                            transition={{ duration: 0.5, ease: 'easeOut' }}
-                            style={{ height: '100%', background: 'var(--gradient-accent)' }}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        No daily goals set up. Add some custom habits below to get started!
+              {/* Tab 2: Daily Goals Container (Kept Mounted for instantaneous switches and drag tracking stability) */}
+              <motion.div
+                animate={{
+                  opacity: activeTab === 'dailyGoals' ? 1 : 0,
+                  y: activeTab === 'dailyGoals' ? 0 : 8,
+                }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                style={{
+                  display: activeTab === 'dailyGoals' ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  gap: '1.25rem',
+                  width: '100%'
+                }}
+              >
+                {/* Daily Goals Summary Card */}
+                <div className="card" style={{
+                  padding: '1.5rem',
+                  background: 'var(--gradient-card), var(--bg-surface-solid)',
+                  border: '1px solid var(--border-color)',
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1.25rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <h2 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '4px', color: 'var(--text-primary)' }}>Daily Progress</h2>
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                        {data?.dailyGoals?.goals && data.dailyGoals.goals.length > 0 && data.dailyGoals.goals.every(g => g.completed)
+                          ? '🎉 Spectacular! You have completed all your goals today!' 
+                          : `Complete your habits and routines. Completed ${data?.dailyGoals?.goals?.filter(g => g.completed).length || 0} of ${data?.dailyGoals?.goals?.length || 0} today.`
+                        }
                       </p>
+                    </div>
+                    {data?.dailyGoals?.goals && data.dailyGoals.goals.length > 0 && (
+                      <button 
+                        onClick={handleResetDailyGoals}
+                        className="btn-outline"
+                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', gap: '4px', height: 'fit-content' }}
+                        title="Reset completions manually for today"
+                      >
+                        <RotateCcw style={{ width: 12, height: 12 }} />
+                        <span>Reset</span>
+                      </button>
                     )}
                   </div>
 
-                  {/* Checklist Card */}
-                  <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem' }}>
-                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
-                      <Calendar style={{ width: 16, height: 16, color: 'var(--accent-primary)' }} />
-                      <span>Habits Checklist</span>
-                    </h3>
-
-                    <Reorder.Group 
-                      axis="y" 
-                      values={data?.dailyGoals?.goals || []} 
-                      onReorder={handleReorderDailyGoals}
-                      style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', listStyle: 'none', padding: 0, margin: 0 }}
-                    >
-                      {(data?.dailyGoals?.goals || []).map((goal) => {
-                        return (
-                          <Reorder.Item 
-                            key={goal.id} 
-                            value={goal}
-                            className="checklist-item"
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: 'var(--border-radius-xs)',
-                              background: goal.completed ? 'rgba(52, 211, 153, 0.03)' : 'var(--bg-surface-solid)',
-                              border: '1px solid ' + (goal.completed ? 'rgba(52, 211, 153, 0.1)' : 'var(--border-color)'),
-                              transition: 'background 0.25s, border-color 0.25s',
-                              userSelect: 'none'
-                            }}
-                            whileDrag={{ scale: 1.02, boxShadow: 'var(--shadow-md)' }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: '0.5rem' }}>
-                              <GripVertical style={{ width: 14, height: 14, color: 'var(--text-muted)', cursor: 'grab', flexShrink: 0 }} />
-                              <label className="checkbox-wrapper" style={{ flex: 1 }}>
-                                <input
-                                  type="checkbox"
-                                  checked={goal.completed}
-                                  onChange={() => handleToggleDailyGoal(goal.id)}
-                                />
-                                <span className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}>
-                                  <span style={{
-                                    fontSize: '0.875rem',
-                                    textDecoration: goal.completed ? 'line-through' : 'none',
-                                    color: goal.completed ? 'var(--text-muted)' : 'var(--text-primary)',
-                                    transition: 'color 0.25s, text-decoration 0.25s'
-                                  }}>
-                                    {goal.label}
-                                  </span>
-                                </span>
-                              </label>
-                            </div>
-                            
-                            <button 
-                              className="delete-btn" 
-                              onClick={(e) => { e.stopPropagation(); handleDeleteDailyGoal(goal.id); }}
-                              style={{ opacity: 0.4 }}
-                            >
-                              <Trash2 style={{ width: 14, height: 14 }} />
-                            </button>
-                          </Reorder.Item>
-                        );
-                      })}
-                    </Reorder.Group>
-
-                    {/* Add Daily Goal Input */}
-                    <div style={{
-                      display: 'flex',
-                      gap: '0.5rem',
-                      marginTop: '0.75rem',
-                      borderTop: '1px solid var(--border-color)',
-                      paddingTop: '1.25rem'
-                    }}>
-                      <input 
-                        id="new-daily-goal-input"
-                        type="text" 
-                        placeholder="Add custom daily goal (e.g. Solve 1 Leetcode problem)..." 
-                        style={{ flex: 1, fontSize: '0.875rem', padding: '0.625rem 0.875rem' }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleAddDailyGoal(e.currentTarget.value);
-                            e.currentTarget.value = '';
-                          }
-                        }}
-                      />
-                      <button 
-                        className="btn-primary" 
-                        style={{ padding: '0 1.25rem', height: 'auto' }}
-                        onClick={() => {
-                          const input = document.getElementById('new-daily-goal-input') as HTMLInputElement;
-                          if (input) {
-                            handleAddDailyGoal(input.value);
-                            input.value = '';
-                          }
-                        }}
-                      >
-                        <Plus style={{ width: 14, height: 14 }} />
-                        <span>Add</span>
-                      </button>
+                  {data?.dailyGoals?.goals && data.dailyGoals.goals.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                        <span>COMPLETION RATE</span>
+                        <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                          {Math.round(((data?.dailyGoals?.goals?.filter(g => g.completed).length || 0) / (data?.dailyGoals?.goals?.length || 1)) * 100)}%
+                        </span>
+                      </div>
+                      <div style={{ height: '8px', background: 'var(--bg-surface-2)', borderRadius: '99px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.round(((data?.dailyGoals?.goals?.filter(g => g.completed).length || 0) / (data?.dailyGoals?.goals?.length || 1)) * 100)}%` }}
+                          transition={{ duration: 0.5, ease: 'easeOut' }}
+                          style={{ height: '100%', background: 'var(--gradient-accent)' }}
+                        />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      No daily goals set up. Add some custom habits below to get started!
+                    </p>
+                  )}
+                </div>
 
+                {/* Checklist Card */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem' }}>
+                  <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
+                    <Calendar style={{ width: 16, height: 16, color: 'var(--accent-primary)' }} />
+                    <span>Habits Checklist</span>
+                  </h3>
+
+                  <Reorder.Group 
+                    axis="y" 
+                    values={data?.dailyGoals?.goals || []} 
+                    onReorder={handleReorderDailyGoals}
+                    style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', listStyle: 'none', padding: 0, margin: 0 }}
+                  >
+                    {(data?.dailyGoals?.goals || []).map((goal) => {
+                      return (
+                        <Reorder.Item 
+                          key={goal.id} 
+                          value={goal}
+                          className="checklist-item"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: 'var(--border-radius-xs)',
+                            background: goal.completed ? 'rgba(52, 211, 153, 0.03)' : 'var(--bg-surface-solid)',
+                            border: '1px solid ' + (goal.completed ? 'rgba(52, 211, 153, 0.1)' : 'var(--border-color)'),
+                            transition: 'background 0.25s, border-color 0.25s',
+                            userSelect: 'none'
+                          }}
+                          whileDrag={{ scale: 1.02, boxShadow: 'var(--shadow-md)' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: '0.5rem' }}>
+                            <GripVertical style={{ width: 14, height: 14, color: 'var(--text-muted)', cursor: 'grab', flexShrink: 0 }} />
+                            <label className="checkbox-wrapper" style={{ flex: 1 }}>
+                              <input
+                                type="checkbox"
+                                checked={goal.completed}
+                                onChange={() => handleToggleDailyGoal(goal.id)}
+                              />
+                              <span className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}>
+                                <span style={{
+                                  fontSize: '0.875rem',
+                                  textDecoration: goal.completed ? 'line-through' : 'none',
+                                  color: goal.completed ? 'var(--text-muted)' : 'var(--text-primary)',
+                                  transition: 'color 0.25s, text-decoration 0.25s'
+                                }}>
+                                  {goal.label}
+                                </span>
+                              </span>
+                            </label>
+                          </div>
+                          
+                          <button 
+                            className="delete-btn" 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteDailyGoal(goal.id); }}
+                            style={{ opacity: 0.4 }}
+                          >
+                            <Trash2 style={{ width: 14, height: 14 }} />
+                          </button>
+                        </Reorder.Item>
+                      );
+                    })}
+                  </Reorder.Group>
+
+                  {/* Add Daily Goal Input */}
                   <div style={{
-                    textAlign: 'center',
-                    fontSize: '0.75rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-muted)',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    marginTop: '0.5rem'
+                    gap: '0.5rem',
+                    marginTop: '0.75rem',
+                    borderTop: '1px solid var(--border-color)',
+                    paddingTop: '1.25rem'
                   }}>
-                    <Calendar style={{ width: 12, height: 12, color: 'var(--accent-primary)' }} />
-                    <span>Daily goals refresh automatically every day based on local timezone.</span>
+                    <input 
+                      id="new-daily-goal-input"
+                      type="text" 
+                      placeholder="Add custom daily goal (e.g. Solve 1 Leetcode problem)..." 
+                      style={{ flex: 1, fontSize: '0.875rem', padding: '0.625rem 0.875rem' }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleAddDailyGoal(e.currentTarget.value);
+                          e.currentTarget.value = '';
+                        }
+                      }}
+                    />
+                    <button 
+                      className="btn-primary" 
+                      style={{ padding: '0 1.25rem', height: 'auto' }}
+                      onClick={() => {
+                        const input = document.getElementById('new-daily-goal-input') as HTMLInputElement;
+                        if (input) {
+                          handleAddDailyGoal(input.value);
+                          input.value = '';
+                        }
+                      }}
+                    >
+                      <Plus style={{ width: 14, height: 14 }} />
+                      <span>Add</span>
+                    </button>
                   </div>
-                </motion.div>
-              )}
+                </div>
+
+                <div style={{
+                  textAlign: 'center',
+                  fontSize: '0.75rem',
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  marginTop: '0.5rem'
+                }}>
+                  <Calendar style={{ width: 12, height: 12, color: 'var(--accent-primary)' }} />
+                  <span>Daily goals refresh automatically every day based on local timezone.</span>
+                </div>
+              </motion.div>
             </motion.div>
           </div>
         )}
