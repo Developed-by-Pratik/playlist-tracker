@@ -41,7 +41,13 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
   const baseY = PAD.top + innerH;
 
   const getColor = (count: number) =>
-    count === 0 ? 'var(--border-color-strong)' : count >= 4 ? '#34d399' : count >= 3 ? '#fbbf24' : '#f87171';
+    count === 0
+      ? 'var(--border-color-strong)'
+      : count >= 3
+      ? '#34d399'
+      : count === 2
+      ? '#fbbf24'
+      : '#f87171';
 
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
 
@@ -56,7 +62,7 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
             </span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {[['#f87171', '1-2'], ['#fbbf24', '3'], ['#34d399', '4+']].map(([color, label]) => (
+            {[['#f87171', '1'], ['#fbbf24', '2'], ['#34d399', '3+']].map(([color, label]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: color }} />
                 <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
@@ -132,21 +138,39 @@ export function GrowthChart({ data, isNested = false }: GrowthChartProps) {
             />
           ))}
 
-          {pts.map((p, i) => {
-            if (pts.length > 6 && i % 2 !== 0) return null;
-            return (
-              <text
-                key={i}
-                x={p.x} y={H - 4}
-                textAnchor="middle"
-                fontSize="8"
-                fill="var(--text-muted)"
-                fontFamily="var(--font-mono)"
-              >
-                {p.date}
-              </text>
-            );
-          })}
+          {(() => {
+            const labelIndices = new Set<number>();
+            if (pts.length > 0) {
+              if (pts.length <= 5) {
+                for (let idx = 0; idx < pts.length; idx++) {
+                  labelIndices.add(idx);
+                }
+              } else {
+                labelIndices.add(0);
+                labelIndices.add(pts.length - 1);
+                const step = (pts.length - 1) / 4;
+                for (let j = 1; j <= 3; j++) {
+                  labelIndices.add(Math.round(j * step));
+                }
+              }
+            }
+
+            return pts.map((p, i) => {
+              if (!labelIndices.has(i)) return null;
+              return (
+                <text
+                  key={i}
+                  x={p.x} y={H - 4}
+                  textAnchor="middle"
+                  fontSize="8"
+                  fill="var(--text-muted)"
+                  fontFamily="var(--font-mono)"
+                >
+                  {p.date}
+                </text>
+              );
+            });
+          })()}
 
           {tooltip && (
             <g transform={`translate(${Math.min(tooltip.x + 8, W - 72)}, ${Math.max(tooltip.y - 36, PAD.top)})`}>
