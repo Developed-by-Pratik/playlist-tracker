@@ -356,16 +356,13 @@ export default function Home() {
 
     if (Object.keys(countsByDateKey).length === 0) return [];
     const sortedKeys = Object.keys(countsByDateKey).sort();
-    const minDate = new Date(sortedKeys[0]);
-    const maxDate = new Date(sortedKeys[sortedKeys.length - 1]);
-    const result: { date: string; count: number }[] = [];
-    const cursor = new Date(minDate);
-    while (cursor <= maxDate) {
-      const key = toKey(cursor);
+    const result: { date: string; count: number; fullDate: string }[] = [];
+    sortedKeys.forEach(key => {
       const entry = countsByDateKey[key];
-      result.push({ date: entry ? entry.label : toLabel(new Date(cursor)), count: entry ? entry.count : 0 });
-      cursor.setDate(cursor.getDate() + 1);
-    }
+      if (entry && entry.count > 0) {
+        result.push({ date: entry.label, count: entry.count, fullDate: key });
+      }
+    });
     return result;
   }, [data]);
 

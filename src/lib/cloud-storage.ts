@@ -91,6 +91,35 @@ export function mergeData(local: AppData, remote: AppData): AppData {
   if (!local.updatedAt) return remote;
   if (!remote.updatedAt) return local;
 
+  // Helper to compare data content ignoring updatedAt and key ordering
+  const isContentEqual = (a: AppData, b: AppData) => {
+    const { updatedAt: _a, ...restA } = a;
+    const { updatedAt: _b, ...restB } = b;
+
+    const canonicalStringify = (obj: any): string => {
+      if (obj === null || obj === undefined) {
+        return 'null';
+      }
+      if (typeof obj !== 'object') {
+        return JSON.stringify(obj);
+      }
+      if (Array.isArray(obj)) {
+        return '[' + obj.map(canonicalStringify).join(',') + ']';
+      }
+      const sortedKeys = Object.keys(obj)
+        .filter(key => obj[key] !== undefined && obj[key] !== null)
+        .sort();
+      const pairs = sortedKeys.map(key => `${JSON.stringify(key)}:${canonicalStringify(obj[key])}`);
+      return '{' + pairs.join(',') + '}';
+    };
+
+    return canonicalStringify(restA) === canonicalStringify(restB);
+  };
+
+  if (isContentEqual(local, remote)) {
+    return localTime >= remoteTime ? local : remote;
+  }
+
   // If timestamps are identical, they are already in sync.
   if (localTime === remoteTime) {
     return local;

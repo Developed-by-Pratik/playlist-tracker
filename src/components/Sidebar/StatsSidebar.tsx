@@ -27,7 +27,7 @@ interface StatsSidebarProps {
     progress: number;
     streak: number;
   };
-  chartData: { date: string; count: number }[];
+  chartData: { date: string; count: number; fullDate?: string }[];
   sessionCount: number;
   onPomodoroStateChange: (state: 'focus' | 'break' | 'idle') => void;
   playlists: Record<string, PlaylistRecord>;
@@ -54,6 +54,7 @@ export function StatsSidebar({
 }: StatsSidebarProps) {
   const [expandedSection, setExpandedSection] = useState<'playlists' | 'completion' | 'chart' | 'pomodoro' | null>('playlists');
   const isChartExpanded = expandedSection === 'chart';
+  const [chartFilter, setChartFilter] = useState<'all' | 'week' | 'month'>('all');
 
   return (
     <motion.aside
@@ -213,14 +214,56 @@ export function StatsSidebar({
             </span>
           </div>
 
-          <button 
-            onClick={(e) => { e.stopPropagation(); setExpandedSection(isChartExpanded ? null : 'chart'); }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-muted)', display: 'flex' }}
-          >
-            <motion.div animate={{ rotate: isChartExpanded ? 180 : 0 }}>
-              <ChevronDown style={{ width: 16, height: 16 }} />
-            </motion.div>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {isChartExpanded && (
+              <div 
+                style={{
+                  display: 'inline-flex',
+                  background: 'var(--bg-surface-2)',
+                  borderRadius: 'var(--border-radius-xs)',
+                  padding: '2px',
+                  border: '1px solid var(--border-color)',
+                  marginRight: '0.25rem',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {(['all', 'week', 'month'] as const).map(f => {
+                  const label = f === 'week' ? '7D' : f === 'month' ? '30D' : 'All';
+                  const isActive = chartFilter === f;
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => setChartFilter(f)}
+                      style={{
+                        background: isActive ? 'var(--bg-surface-solid)' : 'transparent',
+                        color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                        border: 'none',
+                        borderRadius: 'calc(var(--border-radius-xs) - 2px)',
+                        padding: '2px 6px',
+                        fontSize: '0.625rem',
+                        fontFamily: 'var(--font-mono)',
+                        fontWeight: isActive ? 600 : 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <button 
+              onClick={(e) => { e.stopPropagation(); setExpandedSection(isChartExpanded ? null : 'chart'); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-muted)', display: 'flex' }}
+            >
+              <motion.div animate={{ rotate: isChartExpanded ? 180 : 0 }}>
+                <ChevronDown style={{ width: 16, height: 16 }} />
+              </motion.div>
+            </button>
+          </div>
         </div>
 
         <AnimatePresence>
@@ -234,7 +277,7 @@ export function StatsSidebar({
             >
               <div style={{ paddingTop: '1rem' }}>
                 {chartData.length > 0 ? (
-                  <GrowthChart data={chartData} isNested={true} />
+                  <GrowthChart data={chartData} isNested={true} filter={chartFilter} />
                 ) : (
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', margin: '0.5rem 0' }}>
                     Complete a module to see progress.
