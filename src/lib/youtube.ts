@@ -28,12 +28,14 @@ const fetchVideosRaw = async (): Promise<Video[]> => {
         snippet: { 
           resourceId: { videoId: string }; 
           title: string; 
+          description?: string;
           thumbnails?: { medium?: { url: string }; default?: { url: string } }; 
           publishedAt: string; 
         } 
       }) => ({
         id: item.snippet.resourceId.videoId,
         title: item.snippet.title,
+        description: item.snippet.description || '',
         thumbnailUrl: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
         publishedAt: item.snippet.publishedAt,
       }));

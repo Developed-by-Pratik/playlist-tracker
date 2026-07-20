@@ -1,6 +1,7 @@
 export interface Video {
   id: string; // The YouTube video ID
   title: string;
+  description?: string; // Video description
   thumbnailUrl: string;
   publishedAt: string;
   duration?: string; // ISO 8601 duration

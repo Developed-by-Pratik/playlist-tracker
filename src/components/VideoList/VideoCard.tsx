@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PlayCircle, CheckCircle2, ChevronDown, 
-  ExternalLink, Trash2, ListTodo, Zap, Play 
+  Trash2, ListTodo, Zap, Play, BookOpen 
 } from 'lucide-react';
 import { Video, TaskRecord, SubTask } from '@/lib/types';
 
@@ -73,6 +73,7 @@ export const VideoCard = memo(function VideoCard({
   const [savedTime, setSavedTime] = useState<number>(0);
   const playerRef = useRef<any>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
 
   // Sync isExpanded and isPlaying
   useEffect(() => {
@@ -196,6 +197,29 @@ export const VideoCard = memo(function VideoCard({
 
   const durationSeconds = video.duration ? parseISODuration(video.duration) : 0;
   const progressPercent = durationSeconds > 0 ? (savedTime / durationSeconds) * 100 : 0;
+
+  const renderDescriptionWithLinks = (text: string) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, index) => {
+      if (/^(https?:\/\/|www\.)/.test(part)) {
+        const href = part.startsWith('http') ? part : `https://${part}`;
+        return (
+          <a 
+            key={index} 
+            href={href} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            style={{ color: 'var(--accent-primary, #6366f1)', textDecoration: 'underline', wordBreak: 'break-all' }}
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
 
   return (
     <motion.div
@@ -360,17 +384,79 @@ export const VideoCard = memo(function VideoCard({
                 )}
               </div>
 
-              {video.duration && (
-                <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-color)' }}>
-                  <div style={{ padding: 8, borderRadius: '50%', background: 'var(--accent-primary-light)' }}>
-                    <Zap style={{ width: 14, height: 14, color: 'var(--accent-primary)' }} />
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Progress Prediction</p>
-                    <p style={{ fontSize: '0.625rem', color: 'var(--text-muted)', margin: 0 }}>
-                      A 50m session will cover approx. <b>{Math.min(100, Math.round((50 * 60 / parseISODuration(video.duration)) * 100))}%</b> of this module.
-                    </p>
-                  </div>
+              {/* Description Collapsible Dropdown (Replaces Progress Prediction) */}
+              {video.description ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => setIsDescExpanded(!isDescExpanded)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      background: 'var(--bg-surface-2)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <BookOpen style={{ width: 15, height: 15, color: 'var(--accent-primary)' }} />
+                      <span>Description</span>
+                    </span>
+                    <motion.div animate={{ rotate: isDescExpanded ? 180 : 0 }}>
+                      <ChevronDown style={{ width: 15, height: 15, color: 'var(--text-muted)' }} />
+                    </motion.div>
+                  </button>
+                  
+                  <AnimatePresence initial={false}>
+                    {isDescExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: 'easeInOut' }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <div style={{
+                          padding: '1rem',
+                          background: 'var(--bg-surface-2)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '10px',
+                          fontSize: '0.8125rem',
+                          color: 'var(--text-secondary)',
+                          lineHeight: 1.5,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                        }}>
+                          {renderDescriptionWithLinks(video.description)}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ) : (
+                <div style={{ 
+                  padding: '0.75rem 1rem', 
+                  borderRadius: '10px', 
+                  background: 'var(--bg-surface-2)', 
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <BookOpen style={{ width: 15, height: 15, opacity: 0.5 }} />
+                  <span>No description available for this video.</span>
                 </div>
               )}
 
@@ -426,10 +512,6 @@ export const VideoCard = memo(function VideoCard({
                         }}
                       >Add</button>
                     </div>
-                    <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="btn-outline w-full" style={{ justifyContent: 'space-between', marginTop: '0.5rem' }}>
-                      <span>Watch on YouTube</span>
-                      <ExternalLink style={{ width: 13, height: 13 }} />
-                    </a>
                   </div>
                 </div>
               </div>

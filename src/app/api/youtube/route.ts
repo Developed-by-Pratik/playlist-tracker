@@ -24,6 +24,7 @@ async function fetchPlaylistVideosRaw(playlistId: string): Promise<Video[]> {
     const videos: Video[] = data.items.map((item: any) => ({
       id: item.snippet.resourceId.videoId,
       title: item.snippet.title,
+      description: item.snippet.description || '',
       thumbnailUrl:
         item.snippet.thumbnails?.medium?.url ||
         item.snippet.thumbnails?.default?.url ||
