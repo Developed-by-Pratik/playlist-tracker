@@ -15,7 +15,13 @@ const fetchVideosRaw = async (): Promise<Video[]> => {
   try {
     do {
       const response = await fetch(
-        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${PLAYLIST_ID}&key=${apiKey}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`
+        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${PLAYLIST_ID}&key=${apiKey}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`,
+        {
+          headers: {
+            // Provide a Referer to satisfy YouTube API key website restrictions
+            'Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          }
+        }
       );
       
       if (!response.ok) {
@@ -52,7 +58,12 @@ const fetchVideosRaw = async (): Promise<Video[]> => {
     for (let i = 0; i < videoIds.length; i += 50) {
       const batch = videoIds.slice(i, i + 50).join(',');
       const durResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${apiKey}`
+        `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${apiKey}`,
+        {
+          headers: {
+            'Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          }
+        }
       );
       if (durResponse.ok) {
         const durData = await durResponse.json();

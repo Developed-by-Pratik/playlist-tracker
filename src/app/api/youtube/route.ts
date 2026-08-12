@@ -12,7 +12,12 @@ async function fetchPlaylistVideosRaw(playlistId: string): Promise<Video[]> {
 
   do {
     const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${playlistId}&key=${apiKey}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`;
-    const response = await fetch(url, { next: { revalidate: 3600 } });
+    const response = await fetch(url, { 
+      next: { revalidate: 3600 },
+      headers: {
+        'Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+      }
+    });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -51,7 +56,12 @@ async function fetchPlaylistVideosRaw(playlistId: string): Promise<Video[]> {
     try {
       const durRes = await fetch(
         `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch}&key=${apiKey}`,
-        { next: { revalidate: 3600 } }
+        { 
+          next: { revalidate: 3600 },
+          headers: {
+            'Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          }
+        }
       );
       return durRes.ok ? durRes.json() : null;
     } catch (e) {
@@ -79,7 +89,12 @@ async function fetchPlaylistTitle(playlistId: string): Promise<string> {
 
   try {
     const url = `https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${playlistId}&key=${apiKey}`;
-    const response = await fetch(url, { next: { revalidate: 3600 } });
+    const response = await fetch(url, { 
+      next: { revalidate: 3600 },
+      headers: {
+        'Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+      }
+    });
     if (!response.ok) return '';
     const data = await response.json();
     if (data.items && data.items.length > 0) {
