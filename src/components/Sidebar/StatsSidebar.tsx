@@ -4,19 +4,12 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   CheckCircle2, Flame, 
-  ChevronDown, TrendingUp 
+  ChevronDown, TrendingUp,
+  PanelLeftClose, PanelLeftOpen, ListVideo
 } from 'lucide-react';
 import { AppData, Video, PlaylistRecord } from '@/lib/types';
 import { GrowthChart } from './GrowthChart';
 import { PlaylistSwitcher } from '@/components/Playlist/PlaylistSwitcher';
-import dynamic from 'next/dynamic';
-
-const PomodoroTimer = dynamic(() => import('@/components/PomodoroTimer').then(m => m.PomodoroTimer), {
-  ssr: false,
-  loading: () => (
-    <div style={{ height: 60, borderRadius: 20, background: 'var(--bg-surface-2)', border: '1px solid var(--border-color)', animation: 'pulse 1.5s ease-in-out infinite' }} />
-  )
-});
 
 interface StatsSidebarProps {
   data: AppData;
@@ -36,6 +29,9 @@ interface StatsSidebarProps {
   onDeletePlaylist: (id: string) => void;
   onAddPlaylist: () => void;
   onRenamePlaylist: (id: string, name: string) => void;
+  onReorderPlaylists?: (orderedIds: string[]) => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 const sidebarVariants = {
@@ -50,11 +46,119 @@ const sidebarVariants = {
 export function StatsSidebar({ 
   data, videos, stats, chartData, sessionCount, onPomodoroStateChange,
   playlists, activePlaylistId, onSwitchPlaylist, onDeletePlaylist, onAddPlaylist,
-  onRenamePlaylist
+  onRenamePlaylist, onReorderPlaylists, isCollapsed = false, onToggleCollapse
 }: StatsSidebarProps) {
   const [expandedSection, setExpandedSection] = useState<'playlists' | 'completion' | 'chart' | 'pomodoro' | null>('playlists');
   const isChartExpanded = expandedSection === 'chart';
   const [chartFilter, setChartFilter] = useState<'all' | 'week' | 'month'>('all');
+
+  const playlistCount = Object.keys(playlists).length;
+
+  if (isCollapsed) {
+    return (
+      <motion.aside
+        variants={sidebarVariants}
+        initial="hidden"
+        animate="visible"
+        style={{ 
+          position: 'sticky', 
+          top: '2rem', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '0.75rem',
+          alignItems: 'center',
+          width: '68px',
+          paddingRight: '0.25rem',
+        }}
+      >
+        {/* Expand Button */}
+        <button
+          onClick={onToggleCollapse}
+          title="Expand Sidebar"
+          className="card sidebar-card"
+          style={{
+            width: 52, height: 52,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', borderRadius: 14,
+            border: '1px solid var(--border-color)',
+            background: 'var(--bg-surface-solid)',
+            color: 'var(--accent-primary)',
+            transition: 'all 0.2s ease',
+            boxShadow: 'var(--shadow-md)',
+          }}
+        >
+          <PanelLeftOpen style={{ width: 20, height: 20 }} />
+        </button>
+
+        {/* 1. Playlists Rail Icon */}
+        <button
+          onClick={() => {
+            if (onToggleCollapse) onToggleCollapse();
+            setExpandedSection('playlists');
+          }}
+          title={`Playlists (${playlistCount})`}
+          className="card sidebar-card"
+          style={{
+            width: 52, height: 52,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+            cursor: 'pointer', borderRadius: 14,
+            border: `1px solid ${expandedSection === 'playlists' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+            background: expandedSection === 'playlists' ? 'var(--accent-light)' : 'var(--bg-surface-solid)',
+            color: expandedSection === 'playlists' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+            position: 'relative',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <ListVideo style={{ width: 18, height: 18 }} />
+          <span style={{ fontSize: '0.625rem', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{playlistCount}</span>
+        </button>
+
+        {/* 2. Completion Rail Icon */}
+        <button
+          onClick={() => {
+            if (onToggleCollapse) onToggleCollapse();
+            setExpandedSection('completion');
+          }}
+          title={`Completion: ${stats.progress}% (${stats.completed}/${stats.total})`}
+          className="card sidebar-card"
+          style={{
+            width: 52, height: 52,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+            cursor: 'pointer', borderRadius: 14,
+            border: `1px solid ${expandedSection === 'completion' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+            background: expandedSection === 'completion' ? 'var(--accent-light)' : 'var(--bg-surface-solid)',
+            color: expandedSection === 'completion' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+            position: 'relative',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <CheckCircle2 style={{ width: 18, height: 18 }} />
+          <span style={{ fontSize: '0.625rem', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{stats.progress}%</span>
+        </button>
+
+        {/* 3. Daily Growth Rail Icon */}
+        <button
+          onClick={() => {
+            if (onToggleCollapse) onToggleCollapse();
+            setExpandedSection('chart');
+          }}
+          title="Daily Growth Chart"
+          className="card sidebar-card"
+          style={{
+            width: 52, height: 52,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', borderRadius: 14,
+            border: `1px solid ${expandedSection === 'chart' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+            background: expandedSection === 'chart' ? 'var(--accent-light)' : 'var(--bg-surface-solid)',
+            color: expandedSection === 'chart' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <TrendingUp style={{ width: 18, height: 18 }} />
+        </button>
+      </motion.aside>
+    );
+  }
 
   return (
     <motion.aside
@@ -78,6 +182,7 @@ export function StatsSidebar({
         onDelete={onDeletePlaylist}
         onAddPlaylist={onAddPlaylist}
         onRename={onRenamePlaylist}
+        onReorderPlaylists={onReorderPlaylists}
         isExpanded={expandedSection === 'playlists'}
         onToggleExpanded={(val) => setExpandedSection(val ? 'playlists' : null)}
       />
@@ -289,13 +394,10 @@ export function StatsSidebar({
         </AnimatePresence>
       </motion.div>
 
-
-      {/* 4. Pomodoro Timer */}
-      <PomodoroTimer 
-        onStateChange={onPomodoroStateChange}
-        isExpanded={expandedSection === 'pomodoro'}
-        onToggleExpanded={(expanded) => setExpandedSection(expanded ? 'pomodoro' : null)}
-      />
+      <style>{`
+        .sidebar-collapse-btn:hover { background: var(--bg-surface-solid) !important; color: var(--accent-primary) !important; border-color: var(--accent-primary) !important; }
+      `}</style>
     </motion.aside>
   );
 }
+

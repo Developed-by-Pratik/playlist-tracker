@@ -307,3 +307,17 @@ export const reorderDailyGoals = (newGoals: DailyGoal[], existingData?: AppData)
   }
   return data;
 };
+
+export const reorderPlaylists = (orderedPlaylistIds: string[], existingData?: AppData): AppData => {
+  const data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
+  if (data.playlists) {
+    orderedPlaylistIds.forEach((id, index) => {
+      if (data.playlists[id]) {
+        data.playlists[id].order = index;
+      }
+    });
+    saveData(data);
+  }
+  return data;
+};
+

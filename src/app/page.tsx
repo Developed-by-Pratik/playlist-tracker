@@ -5,12 +5,13 @@ import {
   loadData, updateTask, addPlaylist, removePlaylist, 
   setActivePlaylist, updatePlaylistVideoCount, renamePlaylist,
   toggleDailyGoal, addDailyGoal, deleteDailyGoal, resetDailyGoalsCompleted,
-  reorderDailyGoals
+  reorderDailyGoals, reorderPlaylists
 } from '@/lib/storage';
 import { AppData, Video, DailyGoal } from '@/lib/types';
 import { 
   PlayCircle, Code2, Users, Briefcase, Zap, ChevronUp,
-  Calendar, Sparkles, Plus, Trash2, RotateCcw, GripVertical
+  Calendar, Sparkles, Plus, Trash2, RotateCcw, GripVertical,
+  PanelLeftOpen, PanelLeftClose
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 
@@ -61,6 +62,22 @@ export default function Home() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals'>('modules');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sidebar_collapsed') === 'true';
+    }
+    return false;
+  });
+
+  const toggleSidebarCollapsed = useCallback(() => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sidebar_collapsed', String(next));
+      }
+      return next;
+    });
+  }, []);
 
   const isRemoteUpdate = useRef(false);
   const lastPlaylistId = useRef<string | null>(null);
@@ -266,6 +283,11 @@ export default function Home() {
     setData(nextData);
   }, []);
 
+  const handleReorderPlaylists = useCallback((orderedIds: string[]) => {
+    const nextData = reorderPlaylists(orderedIds, dataRef.current || undefined);
+    setData(nextData);
+  }, []);
+
   // ── Stats ──────────────────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
@@ -394,7 +416,7 @@ export default function Home() {
           <EmptyState onAddPlaylist={() => setIsModalOpen(true)} />
         ) : (
           // ── Main layout ──
-          <div className="main-grid">
+          <div className={`main-grid ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
             <StatsSidebar
               data={data}
               videos={videos}
@@ -408,6 +430,9 @@ export default function Home() {
               onDeletePlaylist={handleDeletePlaylist}
               onAddPlaylist={() => setIsModalOpen(true)}
               onRenamePlaylist={handleRenamePlaylist}
+              onReorderPlaylists={handleReorderPlaylists}
+              isCollapsed={isSidebarCollapsed}
+              onToggleCollapse={toggleSidebarCollapsed}
             />
 
             <motion.div
@@ -417,68 +442,100 @@ export default function Home() {
               initial="hidden"
               animate="visible"
             >
-              {/* Premium Tab Switcher */}
-              <div style={{
-                display: 'flex',
-                background: 'var(--bg-surface-2)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                borderRadius: 'var(--border-radius-sm)',
-                padding: '4px',
-                marginBottom: '1rem',
-                border: '1px solid var(--border-color)',
-                width: 'fit-content',
-                gap: '4px',
-                boxShadow: 'var(--shadow-sm)',
-                position: 'relative',
-              }}>
-                {[
-                  { id: 'modules', label: 'Playlist Modules', icon: PlayCircle },
-                  { id: 'dailyGoals', label: 'Daily Habits & Goals', icon: Calendar }
-                ].map((tab) => {
-                  const isActive = activeTab === tab.id;
-                  const Icon = tab.icon;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id as any)}
-                      style={{
-                        padding: '0.625rem 1.25rem',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        borderRadius: 'calc(var(--border-radius-sm) - 2px)',
-                        border: 'none',
-                        background: isActive ? 'var(--gradient-accent)' : 'transparent',
-                        color: isActive ? '#fff' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                        boxShadow: isActive ? '0 4px 12px rgba(99, 102, 241, 0.25)' : 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        outline: 'none',
-                      }}
-                    >
-                      <Icon style={{ width: 14, height: 14, opacity: isActive ? 1 : 0.8 }} />
-                      <span>{tab.label}</span>
-                      {tab.id === 'dailyGoals' && data?.dailyGoals && (
-                        <span style={{
-                          fontSize: '0.6875rem',
-                          fontFamily: 'var(--font-mono)',
-                          padding: '1px 6px',
-                          borderRadius: '99px',
-                          background: isActive ? 'rgba(255, 255, 255, 0.2)' : 'var(--bg-surface-2)',
-                          color: isActive ? '#fff' : 'var(--text-muted)',
-                          marginLeft: '4px',
-                          border: '1px solid ' + (isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--border-color)'),
-                          transition: 'all 0.25s ease',
-                        }}>
-                          {data.dailyGoals.goals.filter(g => g.completed).length}/{data.dailyGoals.goals.length}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+              {/* Header bar with icon-only Sidebar Toggle Button beside Tab Switcher */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={toggleSidebarCollapsed}
+                  title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 44,
+                    height: 44,
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: 'var(--bg-surface-2)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    border: '1px solid var(--border-color)',
+                    color: isSidebarCollapsed ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: 'var(--shadow-sm)',
+                    outline: 'none',
+                    flexShrink: 0,
+                  }}
+                  className="sidebar-toggle-icon-btn"
+                >
+                  {isSidebarCollapsed ? (
+                    <PanelLeftOpen style={{ width: 18, height: 18 }} />
+                  ) : (
+                    <PanelLeftClose style={{ width: 18, height: 18 }} />
+                  )}
+                </button>
+
+                {/* Premium Tab Switcher */}
+                <div style={{
+                  display: 'flex',
+                  background: 'var(--bg-surface-2)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  borderRadius: 'var(--border-radius-sm)',
+                  padding: '4px',
+                  border: '1px solid var(--border-color)',
+                  width: 'fit-content',
+                  gap: '4px',
+                  boxShadow: 'var(--shadow-sm)',
+                  position: 'relative',
+                }}>
+                  {[
+                    { id: 'modules', label: 'Playlist Modules', icon: PlayCircle },
+                    { id: 'dailyGoals', label: 'Daily Habits & Goals', icon: Calendar }
+                  ].map((tab) => {
+                    const isActive = activeTab === tab.id;
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        style={{
+                          padding: '0.625rem 1.25rem',
+                          fontSize: '0.8125rem',
+                          fontWeight: 600,
+                          borderRadius: 'calc(var(--border-radius-sm) - 2px)',
+                          border: 'none',
+                          background: isActive ? 'var(--gradient-accent)' : 'transparent',
+                          color: isActive ? '#fff' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                          boxShadow: isActive ? '0 4px 12px rgba(99, 102, 241, 0.25)' : 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          outline: 'none',
+                        }}
+                      >
+                        <Icon style={{ width: 14, height: 14, opacity: isActive ? 1 : 0.8 }} />
+                        <span>{tab.label}</span>
+                        {tab.id === 'dailyGoals' && data?.dailyGoals && (
+                          <span style={{
+                            fontSize: '0.6875rem',
+                            fontFamily: 'var(--font-mono)',
+                            padding: '1px 6px',
+                            borderRadius: '99px',
+                            background: isActive ? 'rgba(255, 255, 255, 0.2)' : 'var(--bg-surface-2)',
+                            color: isActive ? '#fff' : 'var(--text-muted)',
+                            marginLeft: '4px',
+                            border: '1px solid ' + (isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--border-color)'),
+                            transition: 'all 0.25s ease',
+                          }}>
+                            {data.dailyGoals.goals.filter(g => g.completed).length}/{data.dailyGoals.goals.length}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Tab 1: Modules Container (Kept Mounted for instantaneous switches and video continuation) */}

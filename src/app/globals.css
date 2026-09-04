@@ -154,10 +154,26 @@ code {
   grid-template-columns: 340px 1fr;
   gap: 2rem;
   align-items: start;
+  transition: grid-template-columns 0.35s cubic-bezier(0.22, 1, 0.36, 1), gap 0.35s ease;
+}
+
+.main-grid.sidebar-collapsed {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.main-grid.sidebar-collapsed aside {
+  display: none !important;
 }
 
 .main-grid > * {
   min-width: 0;
+}
+
+.sidebar-toggle-icon-btn:hover {
+  background: var(--accent-light) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--accent-primary) !important;
 }
 
 /* Stacking threshold */

@@ -24,6 +24,7 @@ export interface PlaylistRecord {
   name: string;                      // user-defined display name
   youtubePlaylistId: string;         // raw PL... ID
   addedAt: string;                   // ISO timestamp
+  order?: number;                    // custom user-defined drag order
   tasks: Record<string, TaskRecord>; // videoId → TaskRecord (isolated per playlist)
   videoCount?: number;               // total video count fetched
 }

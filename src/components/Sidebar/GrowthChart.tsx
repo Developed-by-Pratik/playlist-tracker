@@ -14,8 +14,8 @@ interface GrowthChartProps {
 
 export function GrowthChart({ data, isNested = false, filter }: GrowthChartProps) {
   const W = 248;
-  const H = 140;
-  const PAD = { top: 12, right: 6, bottom: 16, left: 6 };
+  const H = 148;
+  const PAD = { top: 12, right: 22, bottom: 26, left: 22 };
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
 
@@ -152,7 +152,7 @@ export function GrowthChart({ data, isNested = false, filter }: GrowthChartProps
         )}
         <div style={{ 
           width: '100%', 
-          aspectRatio: '248/140',
+          aspectRatio: '248/148',
         }}>
           <svg
             width="100%"
@@ -343,13 +343,23 @@ export function GrowthChart({ data, isNested = false, filter }: GrowthChartProps
                     }
                   }
 
-                  return pts.map((p, i) => {
-                    if (!labelIndices.has(i)) return null;
+                  const sortedIndices = Array.from(labelIndices).sort((a, b) => a - b);
+
+                  return sortedIndices.map((idxInArray, listIdx) => {
+                    const p = pts[idxInArray];
+                    if (!p) return null;
+
+                    let textAnchor: 'start' | 'middle' | 'end' = 'middle';
+                    if (sortedIndices.length > 1) {
+                      if (listIdx === 0) textAnchor = 'start';
+                      else if (listIdx === sortedIndices.length - 1) textAnchor = 'end';
+                    }
+
                     return (
                       <text
-                        key={i}
-                        x={p.x} y={H - 4}
-                        textAnchor="middle"
+                        key={idxInArray}
+                        x={p.x} y={H - 6}
+                        textAnchor={textAnchor}
                         fontSize="8"
                         fill="var(--text-muted)"
                         fontFamily="var(--font-mono)"
