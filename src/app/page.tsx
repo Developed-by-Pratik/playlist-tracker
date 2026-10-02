@@ -54,6 +54,7 @@ export default function Home() {
   const [videosLoading, setVideosLoading] = useState(false);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
+  const [collapsingVideoId, setCollapsingVideoId] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(
     isSupabaseConfigured() ? 'idle' : 'unconfigured'
@@ -187,6 +188,22 @@ export default function Home() {
     setExpandedVideoId(prev => prev === videoId ? null : videoId);
   }, []);
 
+  const handleToggleHideCompleted = useCallback(() => {
+    setHideCompleted(prev => {
+      const next = !prev;
+      if (next && expandedVideoId) {
+        const activeId = dataRef.current?.activePlaylistId;
+        if (activeId) {
+          const activeTasks = dataRef.current?.playlists[activeId]?.tasks || {};
+          if (activeTasks[expandedVideoId]?.completedAt) {
+            setExpandedVideoId(null);
+          }
+        }
+      }
+      return next;
+    });
+  }, [expandedVideoId]);
+
   const handleSubtaskToggle = useCallback((videoId: string, subtaskId: string) => {
     const currentData = dataRef.current;
     if (!currentData?.activePlaylistId) return;
@@ -197,9 +214,19 @@ export default function Home() {
     const updatedSubtasks = subtasksToUse.map(s =>
       s.id === subtaskId ? { ...s, completed: !s.completed } : s
     );
+    const willBeCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(s => s.completed);
+
+    if (hideCompleted && willBeCompleted && expandedVideoId === videoId) {
+      setExpandedVideoId(null);
+      setCollapsingVideoId(videoId);
+      setTimeout(() => {
+        setCollapsingVideoId(null);
+      }, 350);
+    }
+
     const nextData = updateTask(activeId, videoId, { subtasks: updatedSubtasks }, currentData);
     setData(nextData);
-  }, []);
+  }, [hideCompleted, expandedVideoId]);
 
   const handleAddSubtask = useCallback((videoId: string, label: string) => {
     if (!label.trim()) return;
@@ -222,9 +249,19 @@ export default function Home() {
     const currentTask = activeTasks[videoId];
     if (!currentTask) return;
     const updatedSubtasks = currentTask.subtasks.filter(s => s.id !== subtaskId);
+    const willBeCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(s => s.completed);
+
+    if (hideCompleted && willBeCompleted && expandedVideoId === videoId) {
+      setExpandedVideoId(null);
+      setCollapsingVideoId(videoId);
+      setTimeout(() => {
+        setCollapsingVideoId(null);
+      }, 350);
+    }
+
     const nextData = updateTask(activeId, videoId, { subtasks: updatedSubtasks }, currentData);
     setData(nextData);
-  }, []);
+  }, [hideCompleted, expandedVideoId]);
 
   const handleAddPlaylist = useCallback((name: string, youtubePlaylistId: string) => {
     const updated = addPlaylist(name, youtubePlaylistId);
@@ -390,8 +427,8 @@ export default function Home() {
 
   const filteredVideos = useMemo(() => {
     if (!hideCompleted) return videos;
-    return videos.filter(v => !activeTasks[v.id]?.completedAt);
-  }, [videos, hideCompleted, activeTasks]);
+    return videos.filter(v => !activeTasks[v.id]?.completedAt || v.id === collapsingVideoId);
+  }, [videos, hideCompleted, activeTasks, collapsingVideoId]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -407,7 +444,7 @@ export default function Home() {
           progress={stats.progress}
           syncStatus={syncStatus}
           hideCompleted={hideCompleted}
-          onToggleHideCompleted={() => setHideCompleted(!hideCompleted)}
+          onToggleHideCompleted={handleToggleHideCompleted}
           activePlaylistName={activePlaylist?.name}
         />
 
@@ -593,7 +630,7 @@ export default function Home() {
                     </div>
                   </motion.div>
                 ) : (
-                  <>
+                  <AnimatePresence mode="popLayout">
                     {filteredVideos.map((video, index) => {
                       const originalIndex = videos.findIndex(v => v.id === video.id);
                       return (
@@ -635,7 +672,7 @@ export default function Home() {
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>The playlist may be private or empty.</p>
                       </motion.div>
                     )}
-                  </>
+                  </AnimatePresence>
                 )}
               </motion.div>
 

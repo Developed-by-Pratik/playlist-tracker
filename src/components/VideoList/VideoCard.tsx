@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, memo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { 
   PlayCircle, CheckCircle2, ChevronDown, 
-  Trash2, ListTodo, Zap, Play, BookOpen 
+  Trash2, ListTodo, Play, BookOpen 
 } from 'lucide-react';
 import { Video, TaskRecord, SubTask } from '@/lib/types';
 
@@ -18,8 +18,23 @@ interface VideoCardProps {
   onAddSubtask: (videoId: string, label: string) => void;
   onDeleteSubtask: (videoId: string, subtaskId: string) => void;
   defaultSubtasks: SubTask[];
-  icons: Record<string, any>;
+  icons: Record<string, React.ComponentType<{ style?: React.CSSProperties }>>;
   parseISODuration: (duration: string) => number;
+}
+
+interface YTPlayer {
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  destroy: () => void;
+}
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (elementId: string, options: Record<string, unknown>) => YTPlayer;
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
 }
 
 // Global YouTube API Loader Manager
@@ -27,11 +42,11 @@ let ytApiLoaded = false;
 let ytApiCallbacks: (() => void)[] = [];
 
 if (typeof window !== 'undefined') {
-  if ((window as any).YT && (window as any).YT.Player) {
+  if (window.YT && window.YT.Player) {
     ytApiLoaded = true;
   } else {
-    const prevReady = (window as any).onYouTubeIframeAPIReady;
-    (window as any).onYouTubeIframeAPIReady = () => {
+    const prevReady = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
       if (prevReady) prevReady();
       ytApiLoaded = true;
       ytApiCallbacks.forEach(cb => cb());
@@ -41,7 +56,7 @@ if (typeof window !== 'undefined') {
 }
 
 const ensureYoutubeApi = (callback: () => void) => {
-  if (ytApiLoaded || ((window as any).YT && (window as any).YT.Player)) {
+  if (ytApiLoaded || (window.YT && window.YT.Player)) {
     callback();
     return;
   }
@@ -55,12 +70,17 @@ const ensureYoutubeApi = (callback: () => void) => {
   }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 16 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as any }
+    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] }
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.96,
+    transition: { duration: 0.25, ease: 'easeOut' }
   }
 };
 
@@ -71,7 +91,7 @@ export const VideoCard = memo(function VideoCard({
 }: VideoCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [savedTime, setSavedTime] = useState<number>(0);
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YTPlayer | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
 
@@ -97,12 +117,12 @@ export const VideoCard = memo(function VideoCard({
     let destroyed = false;
 
     ensureYoutubeApi(() => {
-      if (destroyed) return;
+      if (destroyed || !window.YT) return;
 
       const time = localStorage.getItem(`playlist_tracker_yt_time_${video.id}`);
       const startSeconds = time ? Math.floor(parseFloat(time)) : 0;
 
-      playerRef.current = new (window as any).YT.Player(`yt-player-${video.id}`, {
+      playerRef.current = new window.YT.Player(`yt-player-${video.id}`, {
         height: '100%',
         width: '100%',
         videoId: video.id,
@@ -112,7 +132,7 @@ export const VideoCard = memo(function VideoCard({
           start: startSeconds > 0 ? startSeconds : undefined,
         },
         events: {
-          onStateChange: (event: any) => {
+          onStateChange: (event: { data: number }) => {
             // PLAYING state is 1
             if (event.data === 1) {
               if (intervalRef.current) clearInterval(intervalRef.current);
@@ -313,6 +333,7 @@ export const VideoCard = memo(function VideoCard({
                     style={{ width: '100%', height: '100%', cursor: 'pointer', position: 'relative' }}
                     onClick={() => setIsPlaying(true)}
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img 
                       src={video.thumbnailUrl} 
                       alt={video.title}
@@ -384,7 +405,7 @@ export const VideoCard = memo(function VideoCard({
                 )}
               </div>
 
-              {/* Description Collapsible Dropdown (Replaces Progress Prediction) */}
+              {/* Description Collapsible Dropdown */}
               {video.description ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <button
