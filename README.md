@@ -17,6 +17,8 @@ Built with **Next.js (App Router + Turbopack)**, **Supabase**, **Framer Motion**
 * **Accordion-Style Collapsible Sidebar**: Fully coordinated sidebar where expanding the Pomodoro Timer (Focus tab), Daily Growth chart, or Milestones automatically collapses any other open sections.
 * **Zero Client-Side Keys**: Secured YouTube Data API fetch routes run on serverless endpoints, utilizing Next.js hour-long revalidated static caching (`unstable_cache`) to optimize API quotas.
 * **Legacy Data Migration**: Automatic, non-destructive migration that ports legacy local flat structures into a clean structured multi-playlist database schema on first authenticated login.
+* **Resources & Links Hub**: Curate and manage essential study links (GitHub repositories, documentation, cheatsheets, and practice links) with instant search, auto-domain formatting, and 1-click clipboard copying.
+* **Centralized SaaS Observability**: Structured in-memory ring-buffer logging (`DEBUG`, `INFO`, `WARN`, `ERROR`) capturing API operations, sync merges, and client diagnostics for administrative audit trails.
 
 ---
 
