@@ -8,6 +8,8 @@ import { CloudSyncStatus } from '@/lib/cloud-storage';
 import { signOut } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useEffect, useState } from 'react';
+import { Clock, User, Users } from 'lucide-react';
+import { formatStudyTime } from '@/lib/study-time/study-time-tracker';
 
 interface SyncHeaderProps {
   loading: boolean;
@@ -16,10 +18,14 @@ interface SyncHeaderProps {
   hideCompleted: boolean;
   onToggleHideCompleted: () => void;
   activePlaylistName?: string;
+  studyTimeSeconds?: number;
+  collaborationEnabled?: boolean;
+  onOpenModeModal?: () => void;
 }
 
 export function SyncHeader({
   loading, progress, syncStatus, hideCompleted, onToggleHideCompleted, activePlaylistName,
+  studyTimeSeconds = 0, collaborationEnabled = false, onOpenModeModal,
 }: SyncHeaderProps) {
   const [user, setUser] = useState<{ name: string; avatar: string | null } | null>(null);
   const [isHovered, setIsHovered] = useState(false);
@@ -39,7 +45,7 @@ export function SyncHeader({
     <motion.header
       initial={{ opacity: 0, y: -16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] as any }}
+      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] as const }}
       style={{
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
         gap: '1rem', marginBottom: '2.5rem', paddingBottom: '1.75rem',
@@ -125,6 +131,60 @@ export function SyncHeader({
               <Zap style={{ width: 13, height: 13 }} />
               {progress}%
             </div>
+
+            {/* Daily Study Time Pill */}
+            <div
+              title="Active focus time today (automatically pauses when idle for 10m)"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                background: 'var(--bg-surface-2)',
+                color: 'var(--text-secondary)',
+                padding: '0.375rem 0.75rem',
+                borderRadius: 99,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                fontFamily: 'var(--font-mono)',
+                border: '1px solid var(--border-color)',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <Clock style={{ width: 13, height: 13, color: 'var(--accent-primary)' }} />
+              <span>{formatStudyTime(studyTimeSeconds)}</span>
+            </div>
+
+            {/* Workspace Mode Pill */}
+            <button
+              onClick={onOpenModeModal}
+              title={collaborationEnabled ? 'Duo Collaboration Mode active (Click to change)' : 'Solo Mode active (Click to change)'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                background: collaborationEnabled ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-surface-2)',
+                color: collaborationEnabled ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                padding: '0.375rem 0.75rem',
+                borderRadius: 99,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                border: '1px solid ' + (collaborationEnabled ? 'var(--accent-primary)' : 'var(--border-color)'),
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {collaborationEnabled ? (
+                <>
+                  <Users style={{ width: 13, height: 13 }} />
+                  <span>Duo Mode</span>
+                </>
+              ) : (
+                <>
+                  <User style={{ width: 13, height: 13 }} />
+                  <span>Solo Mode</span>
+                </>
+              )}
+            </button>
           </>
         )}
         <SyncStatusBadge status={syncStatus} />

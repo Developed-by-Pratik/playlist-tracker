@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { 
-  loadData, updateTask, addPlaylist, removePlaylist, 
+  loadData, saveData, updateTask, addPlaylist, removePlaylist, 
   setActivePlaylist, updatePlaylistVideoCount, renamePlaylist,
   toggleDailyGoal, addDailyGoal, deleteDailyGoal, resetDailyGoalsCompleted,
   reorderDailyGoals, reorderPlaylists
@@ -24,6 +24,8 @@ import { AddPlaylistModal } from '@/components/Playlist/AddPlaylistModal';
 import { PlaylistSwitcher } from '@/components/Playlist/PlaylistSwitcher';
 import { ResourcesHub } from '@/components/Resources/ResourcesHub';
 import { addResource, deleteResource } from '@/lib/resources/resources-storage';
+import { studyTimeTracker } from '@/lib/study-time/study-time-tracker';
+import { CollaborationToggleModal } from '@/components/Collaboration/CollaborationToggleModal';
 
 import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus, mergeData } from '@/lib/cloud-storage';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -64,6 +66,8 @@ export default function Home() {
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModeModalOpen, setIsModeModalOpen] = useState(false);
+  const [studyTimeSeconds, setStudyTimeSeconds] = useState(0);
   const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals' | 'resources'>('modules');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -95,6 +99,16 @@ export default function Home() {
     const handleScroll = () => setShowScrollTop(window.scrollY > 400);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Initialize active study time tracker with idle detection
+  useEffect(() => {
+    const cleanupTracker = studyTimeTracker.init();
+    const unsubscribe = studyTimeTracker.subscribe(sec => setStudyTimeSeconds(sec));
+    return () => {
+      unsubscribe();
+      cleanupTracker();
+    };
   }, []);
 
   // Load data from localStorage + cloud on mount
@@ -337,6 +351,14 @@ export default function Home() {
     setData({ ...updatedData });
   }, []);
 
+  const handleToggleCollaboration = useCallback((enabled: boolean) => {
+    const current = dataRef.current;
+    if (!current) return;
+    const nextData: AppData = { ...current, collaborationEnabled: enabled };
+    saveData(nextData);
+    setData(nextData);
+  }, []);
+
   // ── Stats ──────────────────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
@@ -458,6 +480,9 @@ export default function Home() {
           hideCompleted={hideCompleted}
           onToggleHideCompleted={handleToggleHideCompleted}
           activePlaylistName={activePlaylist?.name}
+          studyTimeSeconds={studyTimeSeconds}
+          collaborationEnabled={data?.collaborationEnabled ?? false}
+          onOpenModeModal={() => setIsModeModalOpen(true)}
         />
 
         {!hasPlaylists ? (
@@ -924,6 +949,14 @@ export default function Home() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={handleAddPlaylist}
+      />
+
+      {/* Collaboration Mode Toggle Modal */}
+      <CollaborationToggleModal
+        isOpen={isModeModalOpen}
+        onClose={() => setIsModeModalOpen(false)}
+        collaborationEnabled={data?.collaborationEnabled ?? false}
+        onToggleCollaboration={handleToggleCollaboration}
       />
 
       {/* Scroll to top */}
