@@ -83,9 +83,12 @@ export function SyncStatusBadge({ status }: SyncStatusBadgeProps) {
   return (
     <div
       style={{
-        display: 'flex', alignItems: 'center', gap: '0.375rem',
-        padding: '0.35rem 0.65rem',
-        borderRadius: 8,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.375rem',
+        height: 36,
+        padding: '0 0.75rem',
+        borderRadius: 999,
         border: `1px solid ${c.border}`,
         background: c.bg,
         color: c.color,
@@ -94,6 +97,8 @@ export function SyncStatusBadge({ status }: SyncStatusBadgeProps) {
         fontWeight: 500,
         cursor: 'default',
         transition: 'all 0.3s ease',
+        boxSizing: 'border-box',
+        flexShrink: 0,
       }}
     >
       {c.icon}

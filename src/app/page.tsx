@@ -638,7 +638,7 @@ export default function Home() {
               animate="visible"
             >
               {/* Header bar with icon-only Sidebar Toggle Button beside Tab Switcher */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '1rem', flexWrap: 'wrap', width: '100%' }}>
                 <button
                   onClick={toggleSidebarCollapsed}
                   title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
@@ -679,6 +679,7 @@ export default function Home() {
                   padding: '4px',
                   border: '1px solid var(--border-color)',
                   width: 'fit-content',
+                  maxWidth: '100%',
                   gap: '4px',
                   boxShadow: 'var(--shadow-sm)',
                   position: 'relative',

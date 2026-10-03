@@ -3,27 +3,32 @@
 import { useTheme } from "./ThemeProvider";
 import { motion, AnimatePresence } from "framer-motion";
 
-export function ThemeToggle() {
+interface ThemeToggleProps {
+  size?: number;
+}
+
+export function ThemeToggle({ size = 36 }: ThemeToggleProps) {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
+  const iconSize = Math.round(size * 0.48);
 
   return (
     <motion.button
       onClick={toggleTheme}
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
       title={`Switch to ${isDark ? "light" : "dark"} mode`}
-      whileHover={{ scale: 1.08 }}
-      whileTap={{ scale: 0.92 }}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
       style={{
         position: "relative",
-        width: 44,
-        height: 44,
-        borderRadius: 12,
+        width: size,
+        height: size,
+        borderRadius: size >= 40 ? 12 : 10,
         border: "1px solid var(--border-color-strong)",
         background: "var(--bg-surface)",
         backdropFilter: "blur(12px)",
         cursor: "pointer",
-        display: "flex",
+        display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
@@ -32,14 +37,15 @@ export function ThemeToggle() {
           ? "0 0 12px rgba(99, 102, 241, 0.1)"
           : "0 0 12px rgba(251, 191, 36, 0.15)",
         flexShrink: 0,
+        boxSizing: "border-box",
       }}
     >
       <AnimatePresence mode="wait" initial={false}>
         {isDark ? (
           <motion.svg
             key="moon"
-            width="20"
-            height="20"
+            width={iconSize}
+            height={iconSize}
             viewBox="0 0 24 24"
             fill="none"
             stroke="var(--accent-hover)"
@@ -56,8 +62,8 @@ export function ThemeToggle() {
         ) : (
           <motion.svg
             key="sun"
-            width="20"
-            height="20"
+            width={iconSize}
+            height={iconSize}
             viewBox="0 0 24 24"
             fill="none"
             stroke="#f59e0b"

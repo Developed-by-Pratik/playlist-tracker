@@ -1,11 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ListTodo, Zap, Eye, EyeOff, LogOut } from 'lucide-react';
+import Link from 'next/link';
+import { ListTodo, Zap, Eye, EyeOff, LogOut, ShieldCheck } from 'lucide-react';
 import { SyncStatusBadge } from '@/components/CloudSyncButton';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { CloudSyncStatus } from '@/lib/cloud-storage';
-import { signOut } from '@/lib/auth';
+import { signOut, isUserAdmin } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useEffect, useState } from 'react';
 import { Clock, User, Users } from 'lucide-react';
@@ -33,7 +34,7 @@ export function SyncHeader({
   studyTimeSeconds = 0, collaborationEnabled = false, onOpenModeModal,
   partnership = null, partnerSnapshot = null, onOpenDuoHub,
 }: SyncHeaderProps) {
-  const [user, setUser] = useState<{ name: string; avatar: string | null } | null>(null);
+  const [user, setUser] = useState<{ name: string; avatar: string | null; email: string | null } | null>(null);
   const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export function SyncHeader({
         setUser({
           name: data.user.user_metadata?.full_name || data.user.email || 'User',
           avatar: data.user.user_metadata?.avatar_url || null,
+          email: data.user.email || null,
         });
       }
     });
@@ -78,7 +80,7 @@ export function SyncHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center" style={{ flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
         {!loading && (
           <>
             <button
@@ -86,12 +88,12 @@ export function SyncHeader({
               onMouseEnter={() => setIsHovered(true)}
               onMouseLeave={() => setIsHovered(false)}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'flex-start',
-                height: 34,
-                width: isHovered ? 154 : 34,
-                paddingLeft: isHovered ? 11 : 8,
+                justifyContent: isHovered ? 'flex-start' : 'center',
+                height: 36,
+                width: isHovered ? 154 : 36,
+                paddingLeft: isHovered ? 11 : 0,
                 paddingRight: isHovered ? 10 : 0,
                 background: hideCompleted ? 'var(--accent-primary)' : 'var(--bg-surface-2)',
                 color: hideCompleted ? 'white' : 'var(--text-secondary)',
@@ -101,6 +103,8 @@ export function SyncHeader({
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
                 transition: 'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s',
+                boxSizing: 'border-box',
+                flexShrink: 0,
               }}
               title={hideCompleted ? 'Show Completed' : 'Hide Completed'}
             >
@@ -126,34 +130,40 @@ export function SyncHeader({
             </button>
 
             <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+              height: 36,
               background: progress === 100 ? 'var(--accent-success-light)' : 'var(--accent-light)',
               color: progress === 100 ? 'var(--accent-success)' : 'var(--accent-hover)',
-              padding: '0.375rem 0.875rem', borderRadius: 99,
+              padding: '0 0.875rem', borderRadius: 999,
               fontSize: '0.8125rem', fontWeight: 600, fontFamily: 'var(--font-mono)',
               border: `1px solid ${progress === 100 ? 'rgba(52, 211, 153, 0.2)' : 'rgba(99, 102, 241, 0.2)'}`,
               boxShadow: progress === 100 ? '0 0 12px rgba(52, 211, 153, 0.15)' : '0 0 12px rgba(99, 102, 241, 0.15)',
+              boxSizing: 'border-box',
+              flexShrink: 0,
             }}>
               <Zap style={{ width: 13, height: 13 }} />
-              {progress}%
+              <span>{progress}%</span>
             </div>
 
             {/* Daily Study Time Pill */}
             <div
               title="Active focus time today (automatically pauses when idle for 10m)"
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.375rem',
+                height: 36,
                 background: 'var(--bg-surface-2)',
                 color: 'var(--text-secondary)',
-                padding: '0.375rem 0.75rem',
-                borderRadius: 99,
+                padding: '0 0.75rem',
+                borderRadius: 999,
                 fontSize: '0.75rem',
                 fontWeight: 600,
                 fontFamily: 'var(--font-mono)',
                 border: '1px solid var(--border-color)',
                 boxShadow: 'var(--shadow-sm)',
+                boxSizing: 'border-box',
+                flexShrink: 0,
               }}
             >
               <Clock style={{ width: 13, height: 13, color: 'var(--accent-primary)' }} />
@@ -165,18 +175,21 @@ export function SyncHeader({
               onClick={onOpenModeModal}
               title={collaborationEnabled ? 'Duo Collaboration Mode active (Click to change)' : 'Solo Mode active (Click to change)'}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.375rem',
+                height: 36,
                 background: collaborationEnabled ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-surface-2)',
                 color: collaborationEnabled ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                padding: '0.375rem 0.75rem',
-                borderRadius: 99,
+                padding: '0 0.75rem',
+                borderRadius: 999,
                 fontSize: '0.75rem',
                 fontWeight: 600,
                 border: '1px solid ' + (collaborationEnabled ? 'var(--accent-primary)' : 'var(--border-color)'),
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
+                boxSizing: 'border-box',
+                flexShrink: 0,
               }}
             >
               {collaborationEnabled ? (
@@ -203,15 +216,38 @@ export function SyncHeader({
           </>
         )}
         <SyncStatusBadge status={syncStatus} />
+        {isUserAdmin(user?.email) && (
+          <Link
+            href="/admin"
+            title="Admin Governance Portal"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: 'var(--bg-surface-2)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--accent-hover)',
+              textDecoration: 'none',
+              transition: 'all 0.2s ease',
+              boxSizing: 'border-box',
+              flexShrink: 0,
+            }}
+          >
+            <ShieldCheck style={{ width: 16, height: 16 }} />
+          </Link>
+        )}
         <ThemeToggle />
 
         {/* User avatar + sign out */}
         {user && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', height: 36, flexShrink: 0 }}>
             {user.avatar ? (
-              <img src={user.avatar} alt={user.name} style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--border-color-strong)' }} />
+              <img src={user.avatar} alt={user.name} style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid var(--border-color-strong)', objectFit: 'cover', boxSizing: 'border-box' }} />
             ) : (
-              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--gradient-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--gradient-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8125rem', fontWeight: 700, color: '#fff', boxSizing: 'border-box' }}>
                 {user.name[0].toUpperCase()}
               </div>
             )}
@@ -219,15 +255,25 @@ export function SyncHeader({
               onClick={() => signOut()}
               title="Sign out"
               style={{
-                background: 'none', border: '1px solid var(--border-color)', borderRadius: 8,
-                padding: '0.3rem 0.5rem', cursor: 'pointer', color: 'var(--text-muted)',
-                display: 'flex', alignItems: 'center', gap: '0.25rem',
-                fontSize: '0.6875rem', fontWeight: 500, transition: 'all 0.2s',
+                background: 'var(--bg-surface-2)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 10,
+                height: 36,
+                padding: '0 0.75rem',
+                cursor: 'pointer',
+                color: 'var(--text-muted)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                transition: 'all 0.2s',
+                boxSizing: 'border-box',
               }}
               className="signout-btn"
             >
-              <LogOut style={{ width: 12, height: 12 }} />
-              Out
+              <LogOut style={{ width: 13, height: 13 }} />
+              <span>Out</span>
             </button>
           </div>
         )}

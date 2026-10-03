@@ -35,8 +35,9 @@ export function DuoSynergyBadge({ partnership, partnerSnapshot, onClick }: DuoSy
           display: 'inline-flex',
           alignItems: 'center',
           gap: '5px',
-          padding: '0.375rem 0.75rem',
-          borderRadius: 99,
+          height: 36,
+          padding: '0 0.75rem',
+          borderRadius: 999,
           background: 'rgba(99, 102, 241, 0.08)',
           color: 'var(--accent-primary)',
           border: '1px dashed var(--accent-primary)',
@@ -44,6 +45,8 @@ export function DuoSynergyBadge({ partnership, partnerSnapshot, onClick }: DuoSy
           fontWeight: 600,
           cursor: 'pointer',
           transition: 'all 0.2s ease',
+          boxSizing: 'border-box',
+          flexShrink: 0,
         }}
       >
         <UserPlus style={{ width: 13, height: 13 }} />
@@ -63,13 +66,16 @@ export function DuoSynergyBadge({ partnership, partnerSnapshot, onClick }: DuoSy
         display: 'inline-flex',
         alignItems: 'center',
         gap: '6px',
-        padding: '0.3rem 0.625rem',
-        borderRadius: 99,
+        height: 36,
+        padding: '0 0.75rem',
+        borderRadius: 999,
         background: 'var(--bg-surface-2)',
         border: '1px solid var(--border-color)',
         color: 'var(--text-primary)',
         cursor: 'pointer',
         transition: 'all 0.2s ease',
+        boxSizing: 'border-box',
+        flexShrink: 0,
       }}
     >
       {/* Partner Avatar with Presence Pulse */}

@@ -29,7 +29,10 @@ Built with **Next.js (App Router + Turbopack)**, **Supabase**, **Framer Motion**
 * **Milestone Celebrations**: Canvas confetti particle bursts synchronized when learners hit 50% course progress or 100% course completion milestones.
 * **1-on-1 WebRTC Voice Study Lounge**: Peer-to-peer audio room with Web Audio API volume analysis, avatar speaking glow pulses, microphone mute/unmute, and partner deafen controls.
 * **Persistent Floating Audio Dock**: Minimalist glassmorphic dock keeping audio co-working live and controllable while browsing playlist videos, checking off tasks, or writing notes.
-* **Centralized SaaS Observability**: Structured in-memory ring-buffer logging (`DEBUG`, `INFO`, `WARN`, `ERROR`) capturing API operations, sync merges, and client diagnostics for administrative audit trails.
+* **Centralized SaaS Observability**: Structured in-memory ring-buffer logging (`DEBUG`, `INFO`, `WARN`, `ERROR`) capturing API operations, sync merges, and client diagnostics.
+* **Central Admin Governance Portal (`/admin`)**: Dedicated administrative console accessible via the header shield button exclusively to authorized admin emails (`pratikkakade.in@gmail.com` and `pratikkakade4618@gmail.com`), featuring real-time platform KPIs (Total Users, Active Today, Duo Buddy Pairs, Total Study Hours) and full playlist inspection.
+* **Learner Directory & Activity Tracker**: Searchable user directory with live presence filters (`Online Now`, `Active Today`, `Duo Paired`, `Suspended`), active course progress indicators, daily study times, completion streaks, and one-click CSV export.
+* **User Access Suspension & Block Gate**: Administrators can block any user directly from the admin dashboard. Suspended users are barred from logging in and presented with a dedicated suspension screen directing them to contact `pratikkakade.in@gmail.com` for access.
 
 ---
 
@@ -179,6 +182,20 @@ create policy "Users can upsert shared scratchpad"
   on public.duo_scratchpads for insert with check (true);
 create policy "Users can update shared scratchpad"
   on public.duo_scratchpads for update using (true);
+
+-- Blocked Users Table (Admin Access Suspension)
+create table public.blocked_users (
+  id text not null primary key,
+  email text not null,
+  display_name text,
+  blocked_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.blocked_users enable row level security;
+create policy "Anyone can read blocked status"
+  on public.blocked_users for select using (true);
+create policy "Admins can manage blocked users"
+  on public.blocked_users for all using (true);
 ```
 
 ---

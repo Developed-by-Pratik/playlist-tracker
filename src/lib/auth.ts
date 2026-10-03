@@ -35,3 +35,16 @@ export const onAuthStateChange = (
   if (!supabase) return { data: { subscription: { unsubscribe: () => {} } } };
   return supabase.auth.onAuthStateChange(callback);
 };
+
+/** Whitelisted Administrator Emails */
+export const ADMIN_EMAILS = [
+  'pratikkakade.in@gmail.com',
+  'pratikkakade4618@gmail.com',
+] as const;
+
+/** Check if given email has administrator privileges */
+export const isUserAdmin = (email?: string | null): boolean => {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email.toLowerCase().trim() as (typeof ADMIN_EMAILS)[number]);
+};
+
