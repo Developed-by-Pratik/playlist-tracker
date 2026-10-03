@@ -277,6 +277,8 @@ export function mergeData(local: AppData, remote: AppData): AppData {
     activePlaylistId: newer.activePlaylistId,
     dailyGoals: mergedDailyGoals,
     dailyGoalsHistory: Object.keys(mergedHistory).length > 0 ? mergedHistory : undefined,
+    resources: newer.resources ?? local.resources ?? remote.resources ?? [],
+    collaborationEnabled: newer.collaborationEnabled ?? local.collaborationEnabled ?? remote.collaborationEnabled ?? false,
     updatedAt: new Date().toISOString()
   };
 

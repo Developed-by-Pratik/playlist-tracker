@@ -39,6 +39,10 @@ export interface DailyGoal {
   completed: boolean;
 }
 
+import { StudyResource } from './types/collaboration';
+
+export * from './types/collaboration';
+
 export interface DailyGoalsRecord {
   lastRefreshedDate: string;
   goals: DailyGoal[];
@@ -50,7 +54,10 @@ export interface AppData {
   activePlaylistId: string | null;
   dailyGoals?: DailyGoalsRecord;
   dailyGoalsHistory?: Record<string, number>;
+  resources?: StudyResource[];
+  collaborationEnabled?: boolean;
   tasks?: Record<string, TaskRecord>; // LEGACY — only present during migration
   updatedAt?: string; // ISO timestamp of last change
 }
+
 

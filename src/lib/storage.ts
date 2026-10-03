@@ -40,6 +40,8 @@ function normalizeData(parsed: Partial<AppData>): AppData {
     activePlaylistId: parsed.activePlaylistId ?? null,
     updatedAt: parsed.updatedAt,
     dailyGoalsHistory: parsed.dailyGoalsHistory || {},
+    resources: parsed.resources || [],
+    collaborationEnabled: parsed.collaborationEnabled ?? false,
     dailyGoals: parsed.dailyGoals || {
       lastRefreshedDate: getLocalDateString(),
       goals: [

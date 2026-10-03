@@ -7,11 +7,11 @@ import {
   toggleDailyGoal, addDailyGoal, deleteDailyGoal, resetDailyGoalsCompleted,
   reorderDailyGoals, reorderPlaylists
 } from '@/lib/storage';
-import { AppData, Video, DailyGoal } from '@/lib/types';
+import { AppData, Video, DailyGoal, StudyResource } from '@/lib/types';
 import { 
   PlayCircle, Code2, Users, Briefcase, Zap, ChevronUp,
   Calendar, Sparkles, Plus, Trash2, RotateCcw, GripVertical,
-  PanelLeftOpen, PanelLeftClose
+  PanelLeftOpen, PanelLeftClose, Bookmark
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 
@@ -22,6 +22,8 @@ import { SkeletonLoader } from '@/components/Layout/SkeletonLoader';
 import { EmptyState } from '@/components/Playlist/EmptyState';
 import { AddPlaylistModal } from '@/components/Playlist/AddPlaylistModal';
 import { PlaylistSwitcher } from '@/components/Playlist/PlaylistSwitcher';
+import { ResourcesHub } from '@/components/Resources/ResourcesHub';
+import { addResource, deleteResource } from '@/lib/resources/resources-storage';
 
 import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus, mergeData } from '@/lib/cloud-storage';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -62,7 +64,7 @@ export default function Home() {
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals'>('modules');
+  const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals' | 'resources'>('modules');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -325,6 +327,16 @@ export default function Home() {
     setData(nextData);
   }, []);
 
+  const handleAddResource = useCallback((resourceInput: Omit<StudyResource, 'id' | 'createdAt'>) => {
+    const { updatedData } = addResource(resourceInput, dataRef.current || undefined);
+    setData({ ...updatedData });
+  }, []);
+
+  const handleDeleteResource = useCallback((id: string) => {
+    const updatedData = deleteResource(id, dataRef.current || undefined);
+    setData({ ...updatedData });
+  }, []);
+
   // ── Stats ──────────────────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
@@ -524,10 +536,12 @@ export default function Home() {
                   gap: '4px',
                   boxShadow: 'var(--shadow-sm)',
                   position: 'relative',
+                  flexWrap: 'wrap',
                 }}>
                   {[
                     { id: 'modules', label: 'Playlist Modules', icon: PlayCircle },
-                    { id: 'dailyGoals', label: 'Daily Habits & Goals', icon: Calendar }
+                    { id: 'dailyGoals', label: 'Daily Habits & Goals', icon: Calendar },
+                    { id: 'resources', label: 'Resources & Links', icon: Bookmark },
                   ].map((tab) => {
                     const isActive = activeTab === tab.id;
                     const Icon = tab.icon;
@@ -567,6 +581,21 @@ export default function Home() {
                             transition: 'all 0.25s ease',
                           }}>
                             {data.dailyGoals.goals.filter(g => g.completed).length}/{data.dailyGoals.goals.length}
+                          </span>
+                        )}
+                        {tab.id === 'resources' && data?.resources && data.resources.length > 0 && (
+                          <span style={{
+                            fontSize: '0.6875rem',
+                            fontFamily: 'var(--font-mono)',
+                            padding: '1px 6px',
+                            borderRadius: '99px',
+                            background: isActive ? 'rgba(255, 255, 255, 0.2)' : 'var(--bg-surface-2)',
+                            color: isActive ? '#fff' : 'var(--text-muted)',
+                            marginLeft: '4px',
+                            border: '1px solid ' + (isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--border-color)'),
+                            transition: 'all 0.25s ease',
+                          }}>
+                            {data.resources.length}
                           </span>
                         )}
                       </button>
@@ -863,6 +892,27 @@ export default function Home() {
                   <Calendar style={{ width: 12, height: 12, color: 'var(--accent-primary)' }} />
                   <span>Daily goals refresh automatically every day based on local timezone.</span>
                 </div>
+              </motion.div>
+
+              {/* Tab 3: Resources & Links Hub */}
+              <motion.div
+                animate={{
+                  opacity: activeTab === 'resources' ? 1 : 0,
+                  y: activeTab === 'resources' ? 0 : 8,
+                }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                style={{
+                  display: activeTab === 'resources' ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  width: '100%',
+                }}
+              >
+                <ResourcesHub
+                  resources={data?.resources || []}
+                  onAddResource={handleAddResource}
+                  onDeleteResource={handleDeleteResource}
+                />
               </motion.div>
             </motion.div>
           </div>
