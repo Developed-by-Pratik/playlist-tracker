@@ -9,8 +9,8 @@ import {
 } from '@/lib/storage';
 import { AppData, Video, DailyGoal, StudyResource } from '@/lib/types';
 import { 
-  PlayCircle, Code2, Users, Briefcase, Zap, ChevronUp,
-  Calendar, Sparkles, Plus, Trash2, RotateCcw, GripVertical,
+  PlayCircle, Users, Zap, ChevronUp,
+  Calendar, Plus, Trash2, RotateCcw, GripVertical,
   PanelLeftOpen, PanelLeftClose, Bookmark
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
@@ -21,16 +21,18 @@ import { SyncHeader } from '@/components/Layout/SyncHeader';
 import { SkeletonLoader } from '@/components/Layout/SkeletonLoader';
 import { EmptyState } from '@/components/Playlist/EmptyState';
 import { AddPlaylistModal } from '@/components/Playlist/AddPlaylistModal';
-import { PlaylistSwitcher } from '@/components/Playlist/PlaylistSwitcher';
 import { ResourcesHub } from '@/components/Resources/ResourcesHub';
 import { addResource, deleteResource } from '@/lib/resources/resources-storage';
 import { studyTimeTracker } from '@/lib/study-time/study-time-tracker';
 import { CollaborationToggleModal } from '@/components/Collaboration/CollaborationToggleModal';
+import { DuoCollaborationHub } from '@/components/Collaboration/DuoCollaborationHub';
+import { collaborationService } from '@/lib/collaboration/collaboration-service';
+import { DuoPartnership, PartnerSnapshot } from '@/lib/types/collaboration';
 
 import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus, mergeData } from '@/lib/cloud-storage';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
-const DEFAULT_ICONS: Record<string, any> = {
+const DEFAULT_ICONS: Record<string, React.ComponentType<{ style?: React.CSSProperties }>> = {
   watchVideo: PlayCircle,
 };
 
@@ -52,23 +54,29 @@ const containerVariants = {
 };
 
 export default function Home() {
-  const [data, setData] = useState<AppData | null>(null);
+  const [data, setData] = useState<AppData | null>(() => {
+    if (typeof window !== 'undefined') {
+      return loadData();
+    }
+    return null;
+  });
   const [videos, setVideos] = useState<Video[]>([]);
-  const [loading, setLoading] = useState(true);
   const [videosLoading, setVideosLoading] = useState(false);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
   const [collapsingVideoId, setCollapsingVideoId] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
-  const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(
-    isSupabaseConfigured() ? 'idle' : 'unconfigured'
+  const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(() =>
+    isSupabaseConfigured() ? 'syncing' : 'unconfigured'
   );
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isModeModalOpen, setIsModeModalOpen] = useState(false);
   const [studyTimeSeconds, setStudyTimeSeconds] = useState(0);
-  const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals' | 'resources'>('modules');
+  const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals' | 'resources' | 'duoHub'>('modules');
+  const [partnership, setPartnership] = useState<DuoPartnership | null>(null);
+  const [partnerSnapshot, setPartnerSnapshot] = useState<PartnerSnapshot | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -111,33 +119,40 @@ export default function Home() {
     };
   }, []);
 
-  // Load data from localStorage + cloud on mount
-  const loadInitialData = async () => {
-    const local = loadData();
-    setData(local);
-    setLoading(true);
-
-    if (isSupabaseConfigured()) {
-      setSyncStatus('syncing');
-      try {
-        const cloud = await loadFromCloud();
-        if (cloud) {
-          const merged = mergeData(local, cloud);
-          localStorage.setItem('playlist_tracker_data', JSON.stringify(merged));
-          setData(merged);
-          setSyncStatus('synced');
-          setTimeout(() => setSyncStatus('idle'), 2000);
-        }
-      } catch {
-        setSyncStatus('error');
-        setTimeout(() => setSyncStatus('idle'), 4000);
-      }
-    }
-    setLoading(false);
-  };
+  // Initialize Duo Collaboration service (pairing, real-time presence & snapshot sync)
+  useEffect(() => {
+    collaborationService.init();
+    const unsubPartnership = collaborationService.subscribeToPartnership(p => setPartnership(p));
+    const unsubSnapshot = collaborationService.subscribeToPartnerSnapshot(s => setPartnerSnapshot(s));
+    return () => {
+      unsubPartnership();
+      unsubSnapshot();
+    };
+  }, []);
 
   useEffect(() => {
-    loadInitialData();
+    if (isSupabaseConfigured()) {
+      loadFromCloud()
+        .then(cloud => {
+          if (cloud) {
+            setData(prev => {
+              const local = prev || loadData();
+              const merged = mergeData(local, cloud);
+              localStorage.setItem('playlist_tracker_data', JSON.stringify(merged));
+              return merged;
+            });
+            setSyncStatus('synced');
+            setTimeout(() => setSyncStatus('idle'), 2000);
+          } else {
+            setSyncStatus('idle');
+          }
+        })
+        .catch(() => {
+          setSyncStatus('error');
+          setTimeout(() => setSyncStatus('idle'), 4000);
+        });
+    }
+
     const unsubscribe = subscribeToCloudChanges(remoteData => {
       isRemoteUpdate.current = true;
       setData(prev => prev ? mergeData(prev, remoteData) : remoteData);
@@ -153,7 +168,14 @@ export default function Home() {
     if (!data) return;
     const activeId = data.activePlaylistId;
     const playlist = activeId ? data.playlists[activeId] : null;
-    if (!playlist) { setVideos([]); setYoutubeError(null); return; }
+    if (!playlist) {
+      if (lastPlaylistId.current !== null) {
+        lastPlaylistId.current = null;
+        setVideos([]);
+        setYoutubeError(null);
+      }
+      return;
+    }
     if (lastPlaylistId.current === activeId) return; // Already loaded
     lastPlaylistId.current = activeId;
 
@@ -357,6 +379,30 @@ export default function Home() {
     const nextData: AppData = { ...current, collaborationEnabled: enabled };
     saveData(nextData);
     setData(nextData);
+    if (!enabled) {
+      setActiveTab(prev => (prev === 'duoHub' ? 'modules' : prev));
+    }
+  }, []);
+
+  const handlePairPartner = useCallback(async (targetCode: string) => {
+    let displayName = 'Me';
+    let avatarUrl: string | null = null;
+    if (supabase) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) {
+          displayName = authData.user.user_metadata?.full_name || authData.user.email || 'Me';
+          avatarUrl = authData.user.user_metadata?.avatar_url || null;
+        }
+      } catch {
+        // Fallback to defaults
+      }
+    }
+    return collaborationService.pairWithCode(targetCode, { name: displayName, avatar: avatarUrl });
+  }, []);
+
+  const handleDisconnectPartner = useCallback(() => {
+    collaborationService.disconnectPartner();
   }, []);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -464,9 +510,47 @@ export default function Home() {
     return videos.filter(v => !activeTasks[v.id]?.completedAt || v.id === collapsingVideoId);
   }, [videos, hideCompleted, activeTasks, collapsingVideoId]);
 
+  // Automatically broadcast snapshot to study partner when stats or focus time change
+  useEffect(() => {
+    if (!data?.collaborationEnabled) return;
+
+    const publishSnapshot = async () => {
+      let displayName = 'Me';
+      let avatarUrl: string | null = null;
+      if (supabase) {
+        try {
+          const { data: authData } = await supabase.auth.getUser();
+          if (authData?.user) {
+            displayName = authData.user.user_metadata?.full_name || authData.user.email || 'Me';
+            avatarUrl = authData.user.user_metadata?.avatar_url || null;
+          }
+        } catch {
+          // Fallback to default
+        }
+      }
+
+      const todayTasksDone = Object.values(activeTasks).filter(t => {
+        if (!t.completedAt) return false;
+        return new Date(t.completedAt).toDateString() === new Date().toDateString();
+      }).length;
+
+      collaborationService.publishMySnapshot({
+        displayName,
+        avatarUrl,
+        activePlaylistName: activePlaylist?.name,
+        progressPct: stats.progress,
+        todayCompleted: todayTasksDone,
+        currentStreak: stats.streak,
+        todayStudySeconds: studyTimeSeconds,
+      });
+    };
+
+    publishSnapshot();
+  }, [data?.collaborationEnabled, stats.progress, stats.streak, studyTimeSeconds, activePlaylist?.name, activeTasks]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  if (!data || loading) return <SkeletonLoader />;
+  if (!data) return <SkeletonLoader />;
 
   const hasPlaylists = Object.keys(data.playlists).length > 0;
 
@@ -483,6 +567,9 @@ export default function Home() {
           studyTimeSeconds={studyTimeSeconds}
           collaborationEnabled={data?.collaborationEnabled ?? false}
           onOpenModeModal={() => setIsModeModalOpen(true)}
+          partnership={partnership}
+          partnerSnapshot={partnerSnapshot}
+          onOpenDuoHub={() => setActiveTab('duoHub')}
         />
 
         {!hasPlaylists ? (
@@ -564,16 +651,17 @@ export default function Home() {
                   flexWrap: 'wrap',
                 }}>
                   {[
-                    { id: 'modules', label: 'Playlist Modules', icon: PlayCircle },
-                    { id: 'dailyGoals', label: 'Daily Habits & Goals', icon: Calendar },
-                    { id: 'resources', label: 'Resources & Links', icon: Bookmark },
+                    { id: 'modules' as const, label: 'Playlist Modules', icon: PlayCircle },
+                    { id: 'dailyGoals' as const, label: 'Daily Habits & Goals', icon: Calendar },
+                    { id: 'resources' as const, label: 'Resources & Links', icon: Bookmark },
+                    ...(data?.collaborationEnabled ? [{ id: 'duoHub' as const, label: 'Duo Buddy 🤝', icon: Users }] : []),
                   ].map((tab) => {
                     const isActive = activeTab === tab.id;
                     const Icon = tab.icon;
                     return (
                       <button
                         key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
+                        onClick={() => setActiveTab(tab.id)}
                         style={{
                           padding: '0.625rem 1.25rem',
                           fontSize: '0.8125rem',
@@ -621,6 +709,21 @@ export default function Home() {
                             transition: 'all 0.25s ease',
                           }}>
                             {data.resources.length}
+                          </span>
+                        )}
+                        {tab.id === 'duoHub' && (
+                          <span style={{
+                            fontSize: '0.6875rem',
+                            fontFamily: 'var(--font-mono)',
+                            padding: '1px 6px',
+                            borderRadius: '99px',
+                            background: partnership ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                            color: partnership ? '#4ade80' : 'var(--text-muted)',
+                            marginLeft: '4px',
+                            border: '1px solid ' + (partnership ? 'rgba(34, 197, 94, 0.3)' : 'var(--border-color)'),
+                            transition: 'all 0.25s ease',
+                          }}>
+                            {partnership ? 'Active' : 'Pair'}
                           </span>
                         )}
                       </button>
@@ -685,7 +788,7 @@ export default function Home() {
                   </motion.div>
                 ) : (
                   <AnimatePresence mode="popLayout">
-                    {filteredVideos.map((video, index) => {
+                    {filteredVideos.map((video) => {
                       const originalIndex = videos.findIndex(v => v.id === video.id);
                       return (
                         <VideoCard
@@ -939,6 +1042,36 @@ export default function Home() {
                   onDeleteResource={handleDeleteResource}
                 />
               </motion.div>
+
+              {/* Tab 4: Duo Collaboration Hub */}
+              {data?.collaborationEnabled && (
+                <motion.div
+                  animate={{
+                    opacity: activeTab === 'duoHub' ? 1 : 0,
+                    y: activeTab === 'duoHub' ? 0 : 8,
+                  }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  style={{
+                    display: activeTab === 'duoHub' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                    width: '100%',
+                  }}
+                >
+                  <DuoCollaborationHub
+                    partnership={partnership}
+                    partnerSnapshot={partnerSnapshot}
+                    onPair={handlePairPartner}
+                    onDisconnect={handleDisconnectPartner}
+                    myStats={{
+                      progress: stats.progress,
+                      completed: stats.completed,
+                      streak: stats.streak,
+                      activePlaylistName: activePlaylist?.name,
+                    }}
+                  />
+                </motion.div>
+              )}
             </motion.div>
           </div>
         )}

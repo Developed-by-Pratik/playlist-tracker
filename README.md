@@ -20,6 +20,10 @@ Built with **Next.js (App Router + Turbopack)**, **Supabase**, **Framer Motion**
 * **Resources & Links Hub**: Curate and manage essential study links (GitHub repositories, documentation, cheatsheets, and practice links) with instant search, auto-domain formatting, and 1-click clipboard copying.
 * **Daily Study Time Tracker**: Automatic active focus time accumulator with 10-minute idle detection, tab visibility detection, and automatic midnight reset.
 * **Workspace Mode Toggle (Solo vs. Duo)**: One-click master toggle enabling distraction-free solo study or rich duo collaboration.
+* **1-on-1 Duo Pairing**: Connect with a study buddy via a persistent 6-character Duo Code or instant 1-click Demo Partner simulation.
+* **Read-Only Partner Progress Mirror**: Live accountability card mirroring your partner's active playlist, overall course completion percentage, today's tasks completed, current study streak, and today's total focus time without edit permissions.
+* **Real-Time Presence & Synergy Badge**: Live header presence indicators (`Online Now 🟢`, `Active 12m ago`, `Private 👻`) and interactive companion badge.
+* **Privacy & Ghost Mode**: Instant privacy switch allowing users to pause presence broadcasting and mask learning statistics whenever private study is preferred.
 * **Centralized SaaS Observability**: Structured in-memory ring-buffer logging (`DEBUG`, `INFO`, `WARN`, `ERROR`) capturing API operations, sync merges, and client diagnostics for administrative audit trails.
 
 ---
@@ -81,6 +85,53 @@ create policy "Users can insert their own sync data"
 create policy "Users can update their own sync data"
   on public.tracker_data for update
   using (auth.uid()::text = sync_id);
+
+-- Duo Partnerships Table (1-on-1 Buddy pairing)
+create table public.duo_partnerships (
+  id uuid default gen_random_uuid() not null,
+  duo_code text not null,
+  user_a text not null,
+  user_b text not null,
+  status text not null default 'active',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  
+  constraint duo_partnerships_pkey primary key (id),
+  constraint duo_partnerships_duo_code_key unique (duo_code)
+);
+
+alter table public.duo_partnerships enable row level security;
+create policy "Users can view their own duo partnerships"
+  on public.duo_partnerships for select using (true);
+create policy "Users can create or update duo partnerships"
+  on public.duo_partnerships for insert with check (true);
+create policy "Users can update duo partnerships"
+  on public.duo_partnerships for update using (true);
+
+-- Partner Snapshots Table (Read-Only Mirror & Presence)
+create table public.partner_snapshots (
+  id uuid default gen_random_uuid() not null,
+  user_id text not null,
+  display_name text not null,
+  avatar_url text,
+  active_playlist text,
+  progress_pct numeric default 0,
+  today_completed integer default 0,
+  current_streak integer default 0,
+  today_study_seconds integer default 0,
+  is_private boolean default false,
+  last_active_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  
+  constraint partner_snapshots_pkey primary key (id),
+  constraint partner_snapshots_user_id_key unique (user_id)
+);
+
+alter table public.partner_snapshots enable row level security;
+create policy "Anyone can read partner snapshots"
+  on public.partner_snapshots for select using (true);
+create policy "Users can upsert their own snapshot"
+  on public.partner_snapshots for insert with check (true);
+create policy "Users can update their own snapshot"
+  on public.partner_snapshots for update using (true);
 ```
 
 ---

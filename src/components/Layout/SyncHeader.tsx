@@ -10,6 +10,8 @@ import { supabase } from '@/lib/supabase';
 import { useEffect, useState } from 'react';
 import { Clock, User, Users } from 'lucide-react';
 import { formatStudyTime } from '@/lib/study-time/study-time-tracker';
+import { DuoPartnership, PartnerSnapshot } from '@/lib/types/collaboration';
+import { DuoSynergyBadge } from '@/components/Collaboration/DuoSynergyBadge';
 
 interface SyncHeaderProps {
   loading: boolean;
@@ -21,11 +23,15 @@ interface SyncHeaderProps {
   studyTimeSeconds?: number;
   collaborationEnabled?: boolean;
   onOpenModeModal?: () => void;
+  partnership?: DuoPartnership | null;
+  partnerSnapshot?: PartnerSnapshot | null;
+  onOpenDuoHub?: () => void;
 }
 
 export function SyncHeader({
   loading, progress, syncStatus, hideCompleted, onToggleHideCompleted, activePlaylistName,
   studyTimeSeconds = 0, collaborationEnabled = false, onOpenModeModal,
+  partnership = null, partnerSnapshot = null, onOpenDuoHub,
 }: SyncHeaderProps) {
   const [user, setUser] = useState<{ name: string; avatar: string | null } | null>(null);
   const [isHovered, setIsHovered] = useState(false);
@@ -185,6 +191,15 @@ export function SyncHeader({
                 </>
               )}
             </button>
+
+            {/* Partner Status Badge (Only in Duo Mode) */}
+            {collaborationEnabled && (
+              <DuoSynergyBadge
+                partnership={partnership}
+                partnerSnapshot={partnerSnapshot}
+                onClick={onOpenDuoHub || (() => {})}
+              />
+            )}
           </>
         )}
         <SyncStatusBadge status={syncStatus} />
