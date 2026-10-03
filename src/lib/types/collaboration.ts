@@ -85,3 +85,19 @@ export interface WeeklyRecapStats {
   topContributorName?: string;
   synergyLevel: string;
 }
+
+export type VoiceConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export interface VoiceSessionState {
+  isActive: boolean;
+  connectionState: VoiceConnectionState;
+  isMuted: boolean;
+  isDeafened: boolean;
+  isSelfSpeaking: boolean;
+  isPartnerSpeaking: boolean;
+  partnerName: string;
+  partnerAvatar?: string | null;
+  durationSeconds: number;
+  error?: string | null;
+}
+

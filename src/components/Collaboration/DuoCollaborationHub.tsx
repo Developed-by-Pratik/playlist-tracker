@@ -16,6 +16,7 @@ import {
   MessageSquare,
   FileText,
   Trophy,
+  Headphones,
 } from 'lucide-react';
 import { DuoPartnership, PartnerSnapshot } from '@/lib/types/collaboration';
 import {
@@ -28,7 +29,9 @@ import { formatStudyTime } from '@/lib/study-time/study-time-tracker';
 import { DuoChatWindow } from '@/components/Collaboration/DuoChatWindow';
 import { DuoDailyScratchpad } from '@/components/Collaboration/DuoDailyScratchpad';
 import { WeeklyDuoRecapCard } from '@/components/Collaboration/WeeklyDuoRecapCard';
+import { VoiceStudyLounge } from '@/components/Voice/VoiceStudyLounge';
 import { duoChatService } from '@/lib/collaboration/chat-service';
+import { webrtcVoiceService } from '@/lib/voice/webrtc-voice-service';
 
 interface DuoCollaborationHubProps {
   partnership: DuoPartnership | null;
@@ -43,6 +46,8 @@ interface DuoCollaborationHubProps {
   };
   myDisplayName?: string;
   myStudyTimeSeconds?: number;
+  initialSubTab?: 'mirror' | 'chat' | 'scratchpad' | 'recap' | 'voice';
+  onSubTabChange?: (tab: 'mirror' | 'chat' | 'scratchpad' | 'recap' | 'voice') => void;
 }
 
 /**
@@ -56,14 +61,33 @@ export function DuoCollaborationHub({
   myStats,
   myDisplayName = 'Me',
   myStudyTimeSeconds = 0,
+  initialSubTab,
+  onSubTabChange,
 }: DuoCollaborationHubProps) {
-  const [hubTab, setHubTab] = useState<'mirror' | 'chat' | 'scratchpad' | 'recap'>('mirror');
+  const [internalTab, setInternalTab] = useState<'mirror' | 'chat' | 'scratchpad' | 'recap' | 'voice'>('mirror');
+  const hubTab = initialSubTab || internalTab;
   const [unreadCount, setUnreadCount] = useState(0);
+  const [voiceActive, setVoiceActive] = useState(false);
   const [targetCode, setTargetCode] = useState('');
   const [pairError, setPairError] = useState<string | null>(null);
   const [isPairingLoading, setIsPairingLoading] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [ghostMode, setGhostModeState] = useState(isGhostModeEnabled());
+
+  const handleTabSelect = (tab: 'mirror' | 'chat' | 'scratchpad' | 'recap' | 'voice') => {
+    setInternalTab(tab);
+    onSubTabChange?.(tab);
+    if (tab === 'chat') {
+      duoChatService.markAllAsRead();
+    }
+  };
+
+  useEffect(() => {
+    const unsubVoice = webrtcVoiceService.subscribe(s => setVoiceActive(s.isActive));
+    return () => {
+      unsubVoice();
+    };
+  }, []);
 
   useEffect(() => {
     duoChatService.setPartnership(partnership);
@@ -381,18 +405,14 @@ export function DuoCollaborationHub({
               { id: 'chat' as const, label: 'Duo Chat', icon: MessageSquare, badge: unreadCount },
               { id: 'scratchpad' as const, label: 'Daily Scratchpad', icon: FileText },
               { id: 'recap' as const, label: 'Weekly Recap', icon: Trophy },
+              { id: 'voice' as const, label: 'Voice Lounge', icon: Headphones, isLive: voiceActive },
             ].map(tab => {
               const isActive = hubTab === tab.id;
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
-                  onClick={() => {
-                    setHubTab(tab.id);
-                    if (tab.id === 'chat') {
-                      duoChatService.markAllAsRead();
-                    }
-                  }}
+                  onClick={() => handleTabSelect(tab.id)}
                   style={{
                     padding: '0.5rem 1rem',
                     fontSize: '0.8125rem',
@@ -410,6 +430,18 @@ export function DuoCollaborationHub({
                 >
                   <Icon style={{ width: 14, height: 14 }} />
                   <span>{tab.label}</span>
+                  {tab.isLive && (
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: '#22c55e',
+                        boxShadow: '0 0 6px #22c55e',
+                        marginLeft: 2,
+                      }}
+                    />
+                  )}
                   {tab.badge !== undefined && tab.badge > 0 && (
                     <span
                       style={{
@@ -654,6 +686,15 @@ export function DuoCollaborationHub({
               partnerSnapshot={partnerSnapshot}
               myStats={myStats}
               myStudyTimeSeconds={myStudyTimeSeconds}
+            />
+          )}
+
+          {/* Sub-Tab 5: Voice Lounge */}
+          {hubTab === 'voice' && (
+            <VoiceStudyLounge
+              partnership={partnership}
+              partnerSnapshot={partnerSnapshot}
+              myDisplayName={myDisplayName}
             />
           )}
         </>

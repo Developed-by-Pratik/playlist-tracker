@@ -27,7 +27,8 @@ Built with **Next.js (App Router + Turbopack)**, **Supabase**, **Framer Motion**
 * **1-on-1 Duo Chat**: Real-time study buddy chat with message timestamps, unread notification alerts, quick motivational chips, and automated demo bot responses.
 * **Shared Daily Scratchpad**: Real-time collaborative scratchpad for code snippets and daily sprint notes that auto-resets every midnight (12:00 AM) for a clean daily slate.
 * **Milestone Celebrations**: Canvas confetti particle bursts synchronized when learners hit 50% course progress or 100% course completion milestones.
-* **Weekly Duo Recap & Synergy Badges**: Mutual accountability summary celebrating combined study focus hours, tasks crushed, and duo streak milestones.
+* **1-on-1 WebRTC Voice Study Lounge**: Peer-to-peer audio room with Web Audio API volume analysis, avatar speaking glow pulses, microphone mute/unmute, and partner deafen controls.
+* **Persistent Floating Audio Dock**: Minimalist glassmorphic dock keeping audio co-working live and controllable while browsing playlist videos, checking off tasks, or writing notes.
 * **Centralized SaaS Observability**: Structured in-memory ring-buffer logging (`DEBUG`, `INFO`, `WARN`, `ERROR`) capturing API operations, sync merges, and client diagnostics for administrative audit trails.
 
 ---

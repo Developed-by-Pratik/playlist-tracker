@@ -26,6 +26,7 @@ import { addResource, deleteResource } from '@/lib/resources/resources-storage';
 import { studyTimeTracker } from '@/lib/study-time/study-time-tracker';
 import { CollaborationToggleModal } from '@/components/Collaboration/CollaborationToggleModal';
 import { DuoCollaborationHub } from '@/components/Collaboration/DuoCollaborationHub';
+import { VoiceStudyDock } from '@/components/Voice/VoiceStudyDock';
 import { collaborationService } from '@/lib/collaboration/collaboration-service';
 import { duoChatService } from '@/lib/collaboration/chat-service';
 import { fireMilestoneBlast } from '@/lib/celebration/confetti';
@@ -77,6 +78,7 @@ export default function Home() {
   const [isModeModalOpen, setIsModeModalOpen] = useState(false);
   const [studyTimeSeconds, setStudyTimeSeconds] = useState(0);
   const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals' | 'resources' | 'duoHub'>('modules');
+  const [duoSubTab, setDuoSubTab] = useState<'mirror' | 'chat' | 'scratchpad' | 'recap' | 'voice'>('mirror');
   const [partnership, setPartnership] = useState<DuoPartnership | null>(null);
   const [partnerSnapshot, setPartnerSnapshot] = useState<PartnerSnapshot | null>(null);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
@@ -1097,6 +1099,8 @@ export default function Home() {
                     onDisconnect={handleDisconnectPartner}
                     myDisplayName={myDisplayName}
                     myStudyTimeSeconds={studyTimeSeconds}
+                    initialSubTab={duoSubTab}
+                    onSubTabChange={setDuoSubTab}
                     myStats={{
                       progress: stats.progress,
                       completed: stats.completed,
@@ -1147,6 +1151,14 @@ export default function Home() {
           </motion.button>
         )}
       </AnimatePresence>
+
+      {/* Persistent Floating Voice Dock */}
+      <VoiceStudyDock
+        onOpenLounge={() => {
+          setActiveTab('duoHub');
+          setDuoSubTab('voice');
+        }}
+      />
 
       <style>{`
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
