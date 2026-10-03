@@ -27,6 +27,8 @@ import { studyTimeTracker } from '@/lib/study-time/study-time-tracker';
 import { CollaborationToggleModal } from '@/components/Collaboration/CollaborationToggleModal';
 import { DuoCollaborationHub } from '@/components/Collaboration/DuoCollaborationHub';
 import { collaborationService } from '@/lib/collaboration/collaboration-service';
+import { duoChatService } from '@/lib/collaboration/chat-service';
+import { fireMilestoneBlast } from '@/lib/celebration/confetti';
 import { DuoPartnership, PartnerSnapshot } from '@/lib/types/collaboration';
 
 import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus, mergeData } from '@/lib/cloud-storage';
@@ -77,6 +79,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'modules' | 'dailyGoals' | 'resources' | 'duoHub'>('modules');
   const [partnership, setPartnership] = useState<DuoPartnership | null>(null);
   const [partnerSnapshot, setPartnerSnapshot] = useState<PartnerSnapshot | null>(null);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [myDisplayName, setMyDisplayName] = useState('Me');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -124,9 +128,23 @@ export default function Home() {
     collaborationService.init();
     const unsubPartnership = collaborationService.subscribeToPartnership(p => setPartnership(p));
     const unsubSnapshot = collaborationService.subscribeToPartnerSnapshot(s => setPartnerSnapshot(s));
+    const unsubUnread = duoChatService.subscribeToUnreadCount(count => setChatUnreadCount(count));
+
+    if (supabase) {
+      supabase.auth.getUser().then(({ data: authData }) => {
+        if (authData?.user) {
+          const name = authData.user.user_metadata?.full_name || authData.user.email?.split('@')[0] || 'Me';
+          setMyDisplayName(name);
+        }
+      }).catch(() => {
+        // Fallback default
+      });
+    }
+
     return () => {
       unsubPartnership();
       unsubSnapshot();
+      unsubUnread();
     };
   }, []);
 
@@ -515,7 +533,7 @@ export default function Home() {
     if (!data?.collaborationEnabled) return;
 
     const publishSnapshot = async () => {
-      let displayName = 'Me';
+      let displayName = myDisplayName || 'Me';
       let avatarUrl: string | null = null;
       if (supabase) {
         try {
@@ -546,7 +564,21 @@ export default function Home() {
     };
 
     publishSnapshot();
-  }, [data?.collaborationEnabled, stats.progress, stats.streak, studyTimeSeconds, activePlaylist?.name, activeTasks]);
+  }, [data?.collaborationEnabled, stats.progress, stats.streak, studyTimeSeconds, activePlaylist?.name, activeTasks, myDisplayName]);
+
+  // Milestone Celebration: trigger particle burst on 50% or 100% course completions
+  const prevProgressRef = useRef(stats.progress);
+  useEffect(() => {
+    const prev = prevProgressRef.current;
+    const current = stats.progress;
+    prevProgressRef.current = current;
+
+    if (prev < 50 && current >= 50) {
+      fireMilestoneBlast('fifty_percent');
+    } else if (prev < 100 && current === 100 && stats.total > 0) {
+      fireMilestoneBlast('course_completed');
+    }
+  }, [stats.progress, stats.total]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -717,13 +749,13 @@ export default function Home() {
                             fontFamily: 'var(--font-mono)',
                             padding: '1px 6px',
                             borderRadius: '99px',
-                            background: partnership ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                            color: partnership ? '#4ade80' : 'var(--text-muted)',
+                            background: chatUnreadCount > 0 ? '#ef4444' : partnership ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                            color: chatUnreadCount > 0 ? '#fff' : partnership ? '#4ade80' : 'var(--text-muted)',
                             marginLeft: '4px',
-                            border: '1px solid ' + (partnership ? 'rgba(34, 197, 94, 0.3)' : 'var(--border-color)'),
+                            border: '1px solid ' + (chatUnreadCount > 0 ? '#ef4444' : partnership ? 'rgba(34, 197, 94, 0.3)' : 'var(--border-color)'),
                             transition: 'all 0.25s ease',
                           }}>
-                            {partnership ? 'Active' : 'Pair'}
+                            {chatUnreadCount > 0 ? `${chatUnreadCount} new` : partnership ? 'Active' : 'Pair'}
                           </span>
                         )}
                       </button>
@@ -1063,6 +1095,8 @@ export default function Home() {
                     partnerSnapshot={partnerSnapshot}
                     onPair={handlePairPartner}
                     onDisconnect={handleDisconnectPartner}
+                    myDisplayName={myDisplayName}
+                    myStudyTimeSeconds={studyTimeSeconds}
                     myStats={{
                       progress: stats.progress,
                       completed: stats.completed,

@@ -1,8 +1,10 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { PartnerSnapshot, DuoPartnership } from '@/lib/types/collaboration';
 import { Flame, UserPlus } from 'lucide-react';
 import { formatLastActive } from '@/lib/collaboration/collaboration-service';
+import { duoChatService } from '@/lib/collaboration/chat-service';
 
 interface DuoSynergyBadgeProps {
   partnership: DuoPartnership | null;
@@ -14,6 +16,16 @@ interface DuoSynergyBadgeProps {
  * DuoSynergyBadge — Header status badge showing partner presence, avatar, and duo streak
  */
 export function DuoSynergyBadge({ partnership, partnerSnapshot, onClick }: DuoSynergyBadgeProps) {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    duoChatService.setPartnership(partnership);
+    const unsub = duoChatService.subscribeToUnreadCount(count => setUnreadCount(count));
+    return () => {
+      unsub();
+    };
+  }, [partnership]);
+
   if (!partnership) {
     return (
       <button
@@ -123,6 +135,22 @@ export function DuoSynergyBadge({ partnership, partnerSnapshot, onClick }: DuoSy
         >
           <Flame style={{ width: 11, height: 11, fill: '#f97316' }} />
           {partnerSnapshot.currentStreak}d
+        </span>
+      )}
+      {/* Unread Message Counter */}
+      {unreadCount > 0 && (
+        <span
+          style={{
+            padding: '1px 5px',
+            fontSize: '0.625rem',
+            fontWeight: 800,
+            borderRadius: 99,
+            background: '#ef4444',
+            color: '#fff',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {unreadCount}
         </span>
       )}
     </button>

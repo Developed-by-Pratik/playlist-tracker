@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
@@ -13,6 +13,9 @@ import {
   Flame,
   Clock,
   Sparkles,
+  MessageSquare,
+  FileText,
+  Trophy,
 } from 'lucide-react';
 import { DuoPartnership, PartnerSnapshot } from '@/lib/types/collaboration';
 import {
@@ -22,6 +25,10 @@ import {
   setGhostMode,
 } from '@/lib/collaboration/collaboration-service';
 import { formatStudyTime } from '@/lib/study-time/study-time-tracker';
+import { DuoChatWindow } from '@/components/Collaboration/DuoChatWindow';
+import { DuoDailyScratchpad } from '@/components/Collaboration/DuoDailyScratchpad';
+import { WeeklyDuoRecapCard } from '@/components/Collaboration/WeeklyDuoRecapCard';
+import { duoChatService } from '@/lib/collaboration/chat-service';
 
 interface DuoCollaborationHubProps {
   partnership: DuoPartnership | null;
@@ -34,6 +41,8 @@ interface DuoCollaborationHubProps {
     streak: number;
     activePlaylistName?: string;
   };
+  myDisplayName?: string;
+  myStudyTimeSeconds?: number;
 }
 
 /**
@@ -45,12 +54,26 @@ export function DuoCollaborationHub({
   onPair,
   onDisconnect,
   myStats,
+  myDisplayName = 'Me',
+  myStudyTimeSeconds = 0,
 }: DuoCollaborationHubProps) {
+  const [hubTab, setHubTab] = useState<'mirror' | 'chat' | 'scratchpad' | 'recap'>('mirror');
+  const [unreadCount, setUnreadCount] = useState(0);
   const [targetCode, setTargetCode] = useState('');
   const [pairError, setPairError] = useState<string | null>(null);
   const [isPairingLoading, setIsPairingLoading] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [ghostMode, setGhostModeState] = useState(isGhostModeEnabled());
+
+  useEffect(() => {
+    duoChatService.setPartnership(partnership);
+    const unsub = duoChatService.subscribeToUnreadCount(count => {
+      setUnreadCount(count);
+    });
+    return () => {
+      unsub();
+    };
+  }, [partnership]);
 
   const myCode = getMyDuoCode();
 
@@ -340,7 +363,75 @@ export function DuoCollaborationHub({
             </div>
           </div>
 
-          {/* Partner Read-Only Progress Mirror Card */}
+          {/* Sub-Tab Navigation Bar */}
+          <div
+            style={{
+              display: 'flex',
+              background: 'var(--bg-surface-2)',
+              borderRadius: 'var(--border-radius-sm)',
+              padding: '4px',
+              border: '1px solid var(--border-color)',
+              gap: '4px',
+              width: 'fit-content',
+              flexWrap: 'wrap',
+            }}
+          >
+            {[
+              { id: 'mirror' as const, label: 'Progress Mirror', icon: Shield },
+              { id: 'chat' as const, label: 'Duo Chat', icon: MessageSquare, badge: unreadCount },
+              { id: 'scratchpad' as const, label: 'Daily Scratchpad', icon: FileText },
+              { id: 'recap' as const, label: 'Weekly Recap', icon: Trophy },
+            ].map(tab => {
+              const isActive = hubTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setHubTab(tab.id);
+                    if (tab.id === 'chat') {
+                      duoChatService.markAllAsRead();
+                    }
+                  }}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    borderRadius: 'calc(var(--border-radius-sm) - 2px)',
+                    border: 'none',
+                    background: isActive ? 'var(--gradient-accent)' : 'transparent',
+                    color: isActive ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <Icon style={{ width: 14, height: 14 }} />
+                  <span>{tab.label}</span>
+                  {tab.badge !== undefined && tab.badge > 0 && (
+                    <span
+                      style={{
+                        padding: '1px 6px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 700,
+                        borderRadius: 99,
+                        background: '#ef4444',
+                        color: '#fff',
+                        marginLeft: 4,
+                      }}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sub-Tab 1: Partner Read-Only Progress Mirror Card */}
+          {hubTab === 'mirror' && (
           <div
             className="card"
             style={{
@@ -538,6 +629,33 @@ export function DuoCollaborationHub({
               </div>
             )}
           </div>
+          )}
+
+          {/* Sub-Tab 2: Duo Chat Window */}
+          {hubTab === 'chat' && (
+            <DuoChatWindow
+              partnership={partnership}
+              partnerSnapshot={partnerSnapshot}
+              myDisplayName={myDisplayName}
+            />
+          )}
+
+          {/* Sub-Tab 3: Daily Scratchpad */}
+          {hubTab === 'scratchpad' && (
+            <DuoDailyScratchpad
+              partnership={partnership}
+              myDisplayName={myDisplayName}
+            />
+          )}
+
+          {/* Sub-Tab 4: Weekly Recap */}
+          {hubTab === 'recap' && (
+            <WeeklyDuoRecapCard
+              partnerSnapshot={partnerSnapshot}
+              myStats={myStats}
+              myStudyTimeSeconds={myStudyTimeSeconds}
+            />
+          )}
         </>
       )}
     </div>

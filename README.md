@@ -24,6 +24,10 @@ Built with **Next.js (App Router + Turbopack)**, **Supabase**, **Framer Motion**
 * **Read-Only Partner Progress Mirror**: Live accountability card mirroring your partner's active playlist, overall course completion percentage, today's tasks completed, current study streak, and today's total focus time without edit permissions.
 * **Real-Time Presence & Synergy Badge**: Live header presence indicators (`Online Now 🟢`, `Active 12m ago`, `Private 👻`) and interactive companion badge.
 * **Privacy & Ghost Mode**: Instant privacy switch allowing users to pause presence broadcasting and mask learning statistics whenever private study is preferred.
+* **1-on-1 Duo Chat**: Real-time study buddy chat with message timestamps, unread notification alerts, quick motivational chips, and automated demo bot responses.
+* **Shared Daily Scratchpad**: Real-time collaborative scratchpad for code snippets and daily sprint notes that auto-resets every midnight (12:00 AM) for a clean daily slate.
+* **Milestone Celebrations**: Canvas confetti particle bursts synchronized when learners hit 50% course progress or 100% course completion milestones.
+* **Weekly Duo Recap & Synergy Badges**: Mutual accountability summary celebrating combined study focus hours, tasks crushed, and duo streak milestones.
 * **Centralized SaaS Observability**: Structured in-memory ring-buffer logging (`DEBUG`, `INFO`, `WARN`, `ERROR`) capturing API operations, sync merges, and client diagnostics for administrative audit trails.
 
 ---
@@ -132,6 +136,48 @@ create policy "Users can upsert their own snapshot"
   on public.partner_snapshots for insert with check (true);
 create policy "Users can update their own snapshot"
   on public.partner_snapshots for update using (true);
+
+-- Duo Chat Messages Table
+create table public.duo_messages (
+  id text not null,
+  partnership_id text not null,
+  sender_id text not null,
+  sender_name text not null,
+  message text not null,
+  is_read boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  
+  constraint duo_messages_pkey primary key (id)
+);
+
+alter table public.duo_messages enable row level security;
+create policy "Users can view duo messages"
+  on public.duo_messages for select using (true);
+create policy "Users can insert duo messages"
+  on public.duo_messages for insert with check (true);
+create policy "Users can update duo messages"
+  on public.duo_messages for update using (true);
+
+-- Duo Daily Scratchpad Table
+create table public.duo_scratchpads (
+  id uuid default gen_random_uuid() not null,
+  partnership_id text not null,
+  note_date text not null,               -- 'YYYY-MM-DD'
+  content text default '',
+  last_edited_by text,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  
+  constraint duo_scratchpads_pkey primary key (id),
+  constraint duo_scratchpads_partnership_date_key unique (partnership_id, note_date)
+);
+
+alter table public.duo_scratchpads enable row level security;
+create policy "Users can view shared scratchpad"
+  on public.duo_scratchpads for select using (true);
+create policy "Users can upsert shared scratchpad"
+  on public.duo_scratchpads for insert with check (true);
+create policy "Users can update shared scratchpad"
+  on public.duo_scratchpads for update using (true);
 ```
 
 ---
