@@ -125,14 +125,14 @@ class AdminService {
       totalUsers: users.length,
       activeUsersToday,
       activeUsersNow,
-      totalPlaylistsAdded: Math.max(totalPlaylistsAdded, 1),
-      activeDuoPartnerships: Math.floor(duoPartnerships / 2) || 1,
+      totalPlaylistsAdded,
+      activeDuoPartnerships: Math.floor(duoPartnerships / 2),
       totalStudyHours: Math.round((totalSeconds / 3600) * 10) / 10,
     };
   }
 
   /**
-   * Fetch the comprehensive learner roster along with added playlists
+   * Fetch the comprehensive learner roster along with added playlists from real data sources
    */
   public async getUserDirectory(): Promise<AdminUserRecord[]> {
     const records: AdminUserRecord[] = [];
@@ -146,21 +146,42 @@ class AdminService {
           supabase.from('tracker_data').select('sync_id, data, updated_at'),
         ]);
 
-        const trackerDataMap: Record<string, Record<string, PlaylistRecord>> = {};
+        const trackerDataMap: Record<
+          string,
+          {
+            playlists?: Record<string, PlaylistRecord>;
+            dailyGoals?: { goals?: Array<{ completed?: boolean }> };
+            dailyGoalsHistory?: Record<string, number>;
+            collaborationEnabled?: boolean;
+          }
+        > = {};
+
         if (trackerRes.data) {
           trackerRes.data.forEach((row: Record<string, unknown>) => {
-            const rowData = row.data as { playlists?: Record<string, PlaylistRecord> } | undefined;
-            if (row.sync_id && rowData?.playlists) {
-              trackerDataMap[row.sync_id as string] = rowData.playlists;
+            const rowData = row.data as
+              | {
+                  playlists?: Record<string, PlaylistRecord>;
+                  dailyGoals?: { goals?: Array<{ completed?: boolean }> };
+                  dailyGoalsHistory?: Record<string, number>;
+                  collaborationEnabled?: boolean;
+                }
+              | undefined;
+            if (row.sync_id && rowData) {
+              trackerDataMap[row.sync_id as string] = rowData;
             }
           });
         }
 
+        const processedUserIds = new Set<string>();
+
         if (!snapshotsRes.error && snapshotsRes.data && snapshotsRes.data.length > 0) {
           snapshotsRes.data.forEach((s: Record<string, unknown>) => {
             const userId = (s.user_id as string) || 'unknown';
+            processedUserIds.add(userId);
             const lastActive = (s.last_active_at as string) || new Date().toISOString();
-            const userPlaylists = this.extractPlaylistsFromRecord(trackerDataMap[userId]);
+            const userTracked = trackerDataMap[userId];
+            const userPlaylists = this.extractPlaylistsFromRecord(userTracked?.playlists);
+            const activePlaylistTitle = (s.active_playlist as string) || (userPlaylists[0]?.name || 'None');
 
             records.push({
               id: userId,
@@ -168,207 +189,113 @@ class AdminService {
               emailOrSyncId: userId,
               avatarUrl: (s.avatar_url as string) || null,
               status: this.determineStatus(lastActive),
-              playlistsCount: userPlaylists.length || 1,
-              playlists: userPlaylists.length > 0 ? userPlaylists : [
-                {
-                  id: 'pl_default',
-                  name: (s.active_playlist as string) || 'Full Stack Web Dev',
-                  youtubePlaylistId: 'PL4cUxeGkcC9gU06b9b3c9e6g29yqCqL8a',
-                  videoCount: 28,
-                  completedTasks: Math.round(((Number(s.progress_pct) || 40) / 100) * 28),
-                  totalTasks: 28,
-                  progressPct: Number(s.progress_pct) || 40,
-                  addedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-                }
-              ],
-              activePlaylist: (s.active_playlist as string) || 'Full Stack Web Dev',
+              playlistsCount: userPlaylists.length,
+              playlists: userPlaylists,
+              activePlaylist: activePlaylistTitle,
               progressPct: Number(s.progress_pct) || 0,
               todayStudySeconds: Number(s.today_study_seconds) || 0,
               todayCompleted: Number(s.today_completed) || 0,
-              currentStreak: Number(s.current_streak) || 1,
-              isDuoPaired: true,
+              currentStreak: Number(s.current_streak) || 0,
+              isDuoPaired: userTracked?.collaborationEnabled ?? false,
+              lastActiveAt: lastActive,
+            });
+          });
+        }
+
+        // Also process any synced tracker_data users not present in partner_snapshots
+        if (trackerRes.data) {
+          trackerRes.data.forEach((row: Record<string, unknown>) => {
+            const syncId = row.sync_id as string;
+            if (!syncId || processedUserIds.has(syncId)) return;
+            processedUserIds.add(syncId);
+
+            const rowData = row.data as
+              | {
+                  playlists?: Record<string, PlaylistRecord>;
+                  dailyGoals?: { goals?: Array<{ completed?: boolean }> };
+                  dailyGoalsHistory?: Record<string, number>;
+                  collaborationEnabled?: boolean;
+                }
+              | undefined;
+            const userPlaylists = this.extractPlaylistsFromRecord(rowData?.playlists);
+            const lastActive = (row.updated_at as string) || new Date().toISOString();
+
+            let progressPct = 0;
+            if (userPlaylists.length > 0) {
+              progressPct = userPlaylists[0].progressPct;
+            }
+
+            records.push({
+              id: syncId,
+              displayName: `Learner (${syncId.slice(0, 6)})`,
+              emailOrSyncId: syncId,
+              avatarUrl: null,
+              status: this.determineStatus(lastActive),
+              playlistsCount: userPlaylists.length,
+              playlists: userPlaylists,
+              activePlaylist: userPlaylists[0]?.name || 'None',
+              progressPct,
+              todayStudySeconds: 0,
+              todayCompleted: rowData?.dailyGoals?.goals?.filter(g => g.completed)?.length || 0,
+              currentStreak: Object.keys(rowData?.dailyGoalsHistory || {}).length || 0,
+              isDuoPaired: rowData?.collaborationEnabled ?? false,
               lastActiveAt: lastActive,
             });
           });
         }
       } catch (err: unknown) {
-        logger.warn('admin', 'Failed to fetch snapshots from Supabase', undefined, err);
+        logger.error('admin', 'Failed to fetch snapshots from Supabase', undefined, err);
       }
     }
 
-    // 2. Add current active user
+    // 2. Add current active user if not already in records
     const partnership = typeof window !== 'undefined' ? getLocalPartnership() : null;
     const currentUserId = partnership?.userA || 'current_user';
-    const hasCurrent = records.some(r => r.id === currentUserId || r.id === 'current_user');
+    const hasCurrent = records.some(r => r.id === currentUserId || (r.id === 'current_user' && currentUserId === 'current_user'));
 
     if (!hasCurrent) {
       const userPlaylists = this.extractPlaylistsFromRecord(local?.playlists);
       const activePlaylistTitle =
         local?.playlists && local.activePlaylistId && local.playlists[local.activePlaylistId]
           ? local.playlists[local.activePlaylistId].name
-          : userPlaylists[0]?.name || 'Full Stack Development';
+          : userPlaylists[0]?.name || 'None';
 
-      const studyTime = typeof window !== 'undefined' ? loadStudyTime() : { seconds: 3600 };
+      const studyTime = typeof window !== 'undefined' ? loadStudyTime() : { seconds: 0 };
 
       // Calculate progress of active playlist
       const activePl = local?.playlists && local.activePlaylistId ? local.playlists[local.activePlaylistId] : null;
-      let activeProgress = 65;
+      let activeProgress = 0;
       if (activePl?.tasks) {
         let comp = 0;
         let tot = 0;
         Object.values(activePl.tasks).forEach(t => {
-          tot += t.subtasks.length;
-          comp += t.subtasks.filter(s => s.completed).length;
+          if (t.subtasks) {
+            tot += t.subtasks.length;
+            comp += t.subtasks.filter(s => s.completed).length;
+          }
         });
         if (tot > 0) activeProgress = Math.round((comp / tot) * 100);
       }
 
+      const todayCompleted = local?.dailyGoals?.goals?.filter(g => g.completed)?.length || 0;
+      const currentStreak = Object.keys(local?.dailyGoalsHistory || {}).length;
+
       records.unshift({
         id: currentUserId,
         displayName: 'You (Current Learner)',
-        emailOrSyncId: 'learner@playlist-tracker.app',
+        emailOrSyncId: currentUserId === 'current_user' ? 'Local Learner' : currentUserId,
         avatarUrl: null,
         status: 'online',
-        playlistsCount: userPlaylists.length || 1,
-        playlists: userPlaylists.length > 0 ? userPlaylists : [
-          {
-            id: 'pl_curr',
-            name: activePlaylistTitle,
-            youtubePlaylistId: 'PLillGF-RfqbZ2ybcoDCDoWe4b18zTWCks',
-            videoCount: 22,
-            completedTasks: 14,
-            totalTasks: 22,
-            progressPct: activeProgress,
-            addedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-          }
-        ],
+        playlistsCount: userPlaylists.length,
+        playlists: userPlaylists,
         activePlaylist: activePlaylistTitle,
         progressPct: activeProgress,
-        todayStudySeconds: studyTime.seconds || 3600,
-        todayCompleted: 4,
-        currentStreak: 5,
-        isDuoPaired: local?.collaborationEnabled ?? false,
-        partnerName: local?.collaborationEnabled ? 'Alex (Demo Partner)' : undefined,
+        todayStudySeconds: studyTime.seconds || 0,
+        todayCompleted,
+        currentStreak,
+        isDuoPaired: Boolean(local?.collaborationEnabled && partnership),
+        partnerName: partnership ? 'Connected Partner' : undefined,
         lastActiveAt: new Date().toISOString(),
-      });
-    }
-
-    // 3. Add simulated demo learners with rich playlists for realistic governance preview
-    const hasAlex = records.some(r => r.id === 'DUO-DEMO' || r.displayName.includes('Alex'));
-    if (!hasAlex) {
-      records.push({
-        id: 'DUO-DEMO',
-        displayName: 'Alex (Study Buddy)',
-        emailOrSyncId: 'alex.study@demo.internal',
-        avatarUrl: null,
-        status: 'online',
-        playlistsCount: 2,
-        playlists: [
-          {
-            id: 'pl_alex_1',
-            name: 'Next.js 15 & React 19 Mastery',
-            youtubePlaylistId: 'PLC3y8-rFHvwjOKd6gdf4QtV1uYNiQnFQI',
-            videoCount: 35,
-            completedTasks: 15,
-            totalTasks: 35,
-            progressPct: 42,
-            addedAt: new Date(Date.now() - 10 * 86400000).toISOString(),
-          },
-          {
-            id: 'pl_alex_2',
-            name: 'Node.js Microservices Architecture',
-            youtubePlaylistId: 'PL4cUxeGkcC9h6b0CjC108z6T3Y_Xk6aH7',
-            videoCount: 18,
-            completedTasks: 12,
-            totalTasks: 18,
-            progressPct: 67,
-            addedAt: new Date(Date.now() - 18 * 86400000).toISOString(),
-          }
-        ],
-        activePlaylist: 'Next.js 15 & React 19 Mastery',
-        progressPct: 42,
-        todayStudySeconds: 4200,
-        todayCompleted: 6,
-        currentStreak: 4,
-        isDuoPaired: true,
-        partnerName: 'You (Current Learner)',
-        lastActiveAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-      });
-
-      records.push({
-        id: 'usr_sarah_09',
-        displayName: 'Sarah Chen',
-        emailOrSyncId: 'sarah.c@dev.io',
-        avatarUrl: null,
-        status: 'active_today',
-        playlistsCount: 3,
-        playlists: [
-          {
-            id: 'pl_sarah_1',
-            name: 'TypeScript Generics & Architecture',
-            youtubePlaylistId: 'PLZlA0Gpn_vH_cED8F73mkyF0A0d3Z_W2b',
-            videoCount: 16,
-            completedTasks: 14,
-            totalTasks: 16,
-            progressPct: 88,
-            addedAt: new Date(Date.now() - 25 * 86400000).toISOString(),
-          },
-          {
-            id: 'pl_sarah_2',
-            name: 'Docker & Kubernetes for Frontend Engineers',
-            youtubePlaylistId: 'PL4cUxeGkcC9huLp_7XmN2rM_CgqLd9h8t',
-            videoCount: 20,
-            completedTasks: 10,
-            totalTasks: 20,
-            progressPct: 50,
-            addedAt: new Date(Date.now() - 12 * 86400000).toISOString(),
-          },
-          {
-            id: 'pl_sarah_3',
-            name: 'CSS Grid & Modern Animations',
-            youtubePlaylistId: 'PL0Zuz27SZ-6PrE9srvEn8jSXX5n59aCxz',
-            videoCount: 12,
-            completedTasks: 12,
-            totalTasks: 12,
-            progressPct: 100,
-            addedAt: new Date(Date.now() - 45 * 86400000).toISOString(),
-          }
-        ],
-        activePlaylist: 'TypeScript Generics & Architecture',
-        progressPct: 88,
-        todayStudySeconds: 7800,
-        todayCompleted: 12,
-        currentStreak: 14,
-        isDuoPaired: false,
-        lastActiveAt: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
-      });
-
-      records.push({
-        id: 'usr_marcus_21',
-        displayName: 'Marcus Vance',
-        emailOrSyncId: 'marcus.vance@tech.co',
-        avatarUrl: null,
-        status: 'offline',
-        playlistsCount: 1,
-        playlists: [
-          {
-            id: 'pl_marcus_1',
-            name: 'Python for Data Engineering & Pipelines',
-            youtubePlaylistId: 'PL-osiE80TeTt2d9bfVyQKpu8vKE23650z',
-            videoCount: 40,
-            completedTasks: 10,
-            totalTasks: 40,
-            progressPct: 25,
-            addedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-          }
-        ],
-        activePlaylist: 'Python for Data Engineering & Pipelines',
-        progressPct: 25,
-        todayStudySeconds: 0,
-        todayCompleted: 0,
-        currentStreak: 2,
-        isDuoPaired: false,
-        lastActiveAt: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
       });
     }
 

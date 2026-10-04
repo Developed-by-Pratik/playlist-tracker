@@ -748,80 +748,86 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                                     </button>
                                   </div>
 
-                                  <div
-                                    style={{
-                                      display: 'grid',
-                                      gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-                                      gap: '1.25rem',
-                                    }}
-                                  >
-                                    {user.playlists.map(pl => (
-                                      <div
-                                        key={pl.id}
-                                        style={{
-                                          padding: '1.25rem',
-                                          borderRadius: 'var(--border-radius-sm)',
-                                          background: 'var(--bg-surface-solid)',
-                                          border: '1px solid var(--border-color)',
-                                          boxShadow: 'var(--shadow-sm)',
-                                          display: 'flex',
-                                          flexDirection: 'column',
-                                          gap: '0.85rem',
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                                          <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
-                                            {pl.name}
-                                          </div>
-                                          <a
-                                            href={`https://www.youtube.com/playlist?list=${pl.youtubePlaylistId}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            style={{
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              justifyContent: 'center',
-                                              width: 28,
-                                              height: 28,
-                                              borderRadius: 'var(--border-radius-xs)',
-                                              background: 'var(--bg-surface-2)',
-                                              border: '1px solid var(--border-color)',
-                                              color: 'var(--accent-primary)',
-                                              flexShrink: 0,
-                                            }}
-                                            title="Open YouTube Playlist"
-                                          >
-                                            <ExternalLink style={{ width: 14, height: 14 }} />
-                                          </a>
-                                        </div>
-
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                          <span>{pl.videoCount} videos tracked</span>
-                                          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent-hover)' }}>
-                                            {pl.completedTasks}/{pl.totalTasks} tasks ({pl.progressPct}%)
-                                          </span>
-                                        </div>
-
+                                  {user.playlists.length === 0 ? (
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', padding: '0.75rem 0' }}>
+                                      No playlists added yet by this learner.
+                                    </div>
+                                  ) : (
+                                    <div
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+                                        gap: '1.25rem',
+                                      }}
+                                    >
+                                      {user.playlists.map(pl => (
                                         <div
+                                          key={pl.id}
                                           style={{
-                                            height: 5,
-                                            borderRadius: 9999,
-                                            background: 'var(--bg-surface-2)',
-                                            overflow: 'hidden',
+                                            padding: '1.25rem',
+                                            borderRadius: 'var(--border-radius-sm)',
+                                            background: 'var(--bg-surface-solid)',
+                                            border: '1px solid var(--border-color)',
+                                            boxShadow: 'var(--shadow-sm)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '0.85rem',
                                           }}
                                         >
+                                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                                            <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+                                              {pl.name}
+                                            </div>
+                                            <a
+                                              href={`https://www.youtube.com/playlist?list=${pl.youtubePlaylistId}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: 28,
+                                                height: 28,
+                                                borderRadius: 'var(--border-radius-xs)',
+                                                background: 'var(--bg-surface-2)',
+                                                border: '1px solid var(--border-color)',
+                                                color: 'var(--accent-primary)',
+                                                flexShrink: 0,
+                                              }}
+                                              title="Open YouTube Playlist"
+                                            >
+                                              <ExternalLink style={{ width: 14, height: 14 }} />
+                                            </a>
+                                          </div>
+
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                            <span>{pl.videoCount} videos tracked</span>
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent-hover)' }}>
+                                              {pl.completedTasks}/{pl.totalTasks} tasks ({pl.progressPct}%)
+                                            </span>
+                                          </div>
+
                                           <div
                                             style={{
-                                              width: `${pl.progressPct}%`,
-                                              height: '100%',
+                                              height: 5,
                                               borderRadius: 9999,
-                                              background: 'var(--accent-primary)',
+                                              background: 'var(--bg-surface-2)',
+                                              overflow: 'hidden',
                                             }}
-                                          />
+                                          >
+                                            <div
+                                              style={{
+                                                width: `${pl.progressPct}%`,
+                                                height: '100%',
+                                                borderRadius: 9999,
+                                                background: 'var(--accent-primary)',
+                                              }}
+                                            />
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
-                                  </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                             </tr>
