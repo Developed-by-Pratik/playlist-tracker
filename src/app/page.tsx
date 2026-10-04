@@ -83,6 +83,7 @@ export default function Home() {
   const [partnerSnapshot, setPartnerSnapshot] = useState<PartnerSnapshot | null>(null);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [myDisplayName, setMyDisplayName] = useState('Me');
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -108,6 +109,11 @@ export default function Home() {
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  const studyTimeSecondsRef = useRef(studyTimeSeconds);
+  useEffect(() => {
+    studyTimeSecondsRef.current = studyTimeSeconds;
+  }, [studyTimeSeconds]);
 
   useEffect(() => {
     const handleScroll = () => setShowScrollTop(window.scrollY > 400);
@@ -135,8 +141,15 @@ export default function Home() {
     if (supabase) {
       supabase.auth.getUser().then(({ data: authData }) => {
         if (authData?.user) {
-          const name = authData.user.user_metadata?.full_name || authData.user.email?.split('@')[0] || 'Me';
+          const meta = authData.user.user_metadata || {};
+          const name =
+            (meta.full_name as string) ||
+            (meta.name as string) ||
+            authData.user.email?.split('@')[0] ||
+            'Me';
+          const avatar = (meta.avatar_url as string) || (meta.picture as string) || null;
           setMyDisplayName(name);
+          setMyAvatarUrl(avatar);
         }
       }).catch(() => {
         // Fallback default
@@ -530,51 +543,36 @@ export default function Home() {
     return videos.filter(v => !activeTasks[v.id]?.completedAt || v.id === collapsingVideoId);
   }, [videos, hideCompleted, activeTasks, collapsingVideoId]);
 
-  // Automatically broadcast snapshot and learner profile to database when stats or focus time change
+  // Broadcast snapshot to partner on milestone/progress changes or on 60-second periodic heartbeat
   useEffect(() => {
-    const publishSnapshot = async () => {
-      let displayName = myDisplayName || 'Learner';
-      let avatarUrl: string | null = null;
-      let email: string | null = null;
+    const todayTasksDone = Object.values(activeTasks).filter(t => {
+      if (!t.completedAt) return false;
+      return new Date(t.completedAt).toDateString() === new Date().toDateString();
+    }).length;
 
-      if (supabase) {
-        try {
-          const { data: authData } = await supabase.auth.getUser();
-          if (authData?.user) {
-            const meta = authData.user.user_metadata || {};
-            displayName =
-              (meta.full_name as string) ||
-              (meta.name as string) ||
-              authData.user.email?.split('@')[0] ||
-              myDisplayName ||
-              'Learner';
-            avatarUrl = (meta.avatar_url as string) || (meta.picture as string) || null;
-            email = authData.user.email || null;
-          }
-        } catch {
-          // Fallback
-        }
-      }
-
-      const todayTasksDone = Object.values(activeTasks).filter(t => {
-        if (!t.completedAt) return false;
-        return new Date(t.completedAt).toDateString() === new Date().toDateString();
-      }).length;
-
+    const publishSnapshot = () => {
       collaborationService.publishMySnapshot({
-        displayName,
-        avatarUrl,
-        email,
+        displayName: myDisplayName || 'Learner',
+        avatarUrl: myAvatarUrl,
         activePlaylistName: activePlaylist?.name,
         progressPct: stats.progress,
         todayCompleted: todayTasksDone,
         currentStreak: stats.streak,
-        todayStudySeconds: studyTimeSeconds,
+        todayStudySeconds: studyTimeSecondsRef.current,
       });
     };
 
-    publishSnapshot();
-  }, [stats.progress, stats.streak, studyTimeSeconds, activePlaylist?.name, activeTasks, myDisplayName]);
+    // Debounce immediate state change push by 500ms
+    const timer = setTimeout(publishSnapshot, 500);
+
+    // Periodic 60-second background study time refresh
+    const periodic = setInterval(publishSnapshot, 60000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(periodic);
+    };
+  }, [stats.progress, stats.streak, activePlaylist?.name, activeTasks, myDisplayName, myAvatarUrl]);
 
   // Milestone Celebration: trigger particle burst on 50% or 100% course completions
   const prevProgressRef = useRef(stats.progress);
