@@ -222,13 +222,27 @@ export async function GET(request: NextRequest) {
       const trackerData = trackerMap.get(userId);
       const snapshot = snapshotMap.get(userId);
 
-      // Identity resolution
-      const email = authInfo?.email || userId;
+      // Identity resolution across Auth metadata, partner snapshots, and tracker profile
+      const userProfile = (trackerData as { userProfile?: { email?: string; displayName?: string; avatarUrl?: string | null } } | undefined)?.userProfile;
+      const snapshotEmail = (snapshot as { email?: string } | undefined)?.email;
+
+      const email =
+        authInfo?.email ||
+        snapshotEmail ||
+        userProfile?.email ||
+        userId;
+
       const displayName =
         authInfo?.name ||
         snapshot?.display_name ||
+        userProfile?.displayName ||
         (email.includes('@') ? email.split('@')[0] : `Learner (${userId.slice(0, 6)})`);
-      const avatarUrl = authInfo?.avatarUrl || snapshot?.avatar_url || null;
+
+      const avatarUrl =
+        authInfo?.avatarUrl ||
+        snapshot?.avatar_url ||
+        userProfile?.avatarUrl ||
+        null;
 
       // Extract real playlists
       const playlists = extractPlaylists(trackerData?.playlists);

@@ -530,22 +530,29 @@ export default function Home() {
     return videos.filter(v => !activeTasks[v.id]?.completedAt || v.id === collapsingVideoId);
   }, [videos, hideCompleted, activeTasks, collapsingVideoId]);
 
-  // Automatically broadcast snapshot to study partner when stats or focus time change
+  // Automatically broadcast snapshot and learner profile to database when stats or focus time change
   useEffect(() => {
-    if (!data?.collaborationEnabled) return;
-
     const publishSnapshot = async () => {
-      let displayName = myDisplayName || 'Me';
+      let displayName = myDisplayName || 'Learner';
       let avatarUrl: string | null = null;
+      let email: string | null = null;
+
       if (supabase) {
         try {
           const { data: authData } = await supabase.auth.getUser();
           if (authData?.user) {
-            displayName = authData.user.user_metadata?.full_name || authData.user.email || 'Me';
-            avatarUrl = authData.user.user_metadata?.avatar_url || null;
+            const meta = authData.user.user_metadata || {};
+            displayName =
+              (meta.full_name as string) ||
+              (meta.name as string) ||
+              authData.user.email?.split('@')[0] ||
+              myDisplayName ||
+              'Learner';
+            avatarUrl = (meta.avatar_url as string) || (meta.picture as string) || null;
+            email = authData.user.email || null;
           }
         } catch {
-          // Fallback to default
+          // Fallback
         }
       }
 
@@ -557,6 +564,7 @@ export default function Home() {
       collaborationService.publishMySnapshot({
         displayName,
         avatarUrl,
+        email,
         activePlaylistName: activePlaylist?.name,
         progressPct: stats.progress,
         todayCompleted: todayTasksDone,
@@ -566,7 +574,7 @@ export default function Home() {
     };
 
     publishSnapshot();
-  }, [data?.collaborationEnabled, stats.progress, stats.streak, studyTimeSeconds, activePlaylist?.name, activeTasks, myDisplayName]);
+  }, [stats.progress, stats.streak, studyTimeSeconds, activePlaylist?.name, activeTasks, myDisplayName]);
 
   // Milestone Celebration: trigger particle burst on 50% or 100% course completions
   const prevProgressRef = useRef(stats.progress);

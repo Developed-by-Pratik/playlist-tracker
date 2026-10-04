@@ -222,6 +222,7 @@ class CollaborationService {
   public async publishMySnapshot(params: {
     displayName: string;
     avatarUrl?: string | null;
+    email?: string | null;
     activePlaylistName?: string;
     progressPct: number;
     todayCompleted: number;
@@ -231,7 +232,7 @@ class CollaborationService {
     const isPrivate = isGhostModeEnabled();
     const myUid = (await getSyncId()) || getMyDuoCode();
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       user_id: myUid,
       display_name: params.displayName,
       avatar_url: params.avatarUrl || null,
@@ -243,6 +244,10 @@ class CollaborationService {
       is_private: isPrivate,
       last_active_at: new Date().toISOString(),
     };
+
+    if (params.email) {
+      payload.email = params.email;
+    }
 
     if (isSupabaseConfigured() && supabase) {
       try {

@@ -48,6 +48,12 @@ export interface DailyGoalsRecord {
   goals: DailyGoal[];
 }
 
+export interface UserProfile {
+  displayName?: string;
+  email?: string;
+  avatarUrl?: string | null;
+}
+
 export interface AppData {
   settings: UserSettings;
   playlists: Record<string, PlaylistRecord>; // playlistId → PlaylistRecord
@@ -56,8 +62,10 @@ export interface AppData {
   dailyGoalsHistory?: Record<string, number>;
   resources?: StudyResource[];
   collaborationEnabled?: boolean;
+  userProfile?: UserProfile;
   tasks?: Record<string, TaskRecord>; // LEGACY — only present during migration
   updatedAt?: string; // ISO timestamp of last change
 }
+
 
 
