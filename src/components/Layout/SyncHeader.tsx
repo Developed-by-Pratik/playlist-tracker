@@ -11,6 +11,7 @@ import {
   Clock,
   User,
   Users,
+  UserPlus,
   Moon,
   Sun,
   ChevronDown,
@@ -24,7 +25,6 @@ import { supabase } from '@/lib/supabase';
 import { useEffect, useState, useRef } from 'react';
 import { formatStudyTime } from '@/lib/study-time/study-time-tracker';
 import { DuoPartnership, PartnerSnapshot } from '@/lib/types/collaboration';
-import { DuoSynergyBadge } from '@/components/Collaboration/DuoSynergyBadge';
 import { logger } from '@/lib/observability/logger';
 
 interface SyncHeaderProps {
@@ -101,6 +101,7 @@ export function SyncHeader({
   }, [isProfileMenuOpen]);
 
   const isAdmin = isUserAdmin(user?.email);
+  const isPaired = partnership?.status === 'active';
 
   return (
     <motion.header
@@ -186,22 +187,13 @@ export function SyncHeader({
               <Clock style={{ width: 13, height: 13, color: 'var(--accent-primary)' }} />
               <span>{formatStudyTime(studyTimeSeconds)}</span>
             </div>
-
-            {/* 2. Duo Synergy Badge (If Duo Mode Active) */}
-            {collaborationEnabled && (
-              <DuoSynergyBadge
-                partnership={partnership}
-                partnerSnapshot={partnerSnapshot}
-                onClick={onOpenDuoHub || (() => {})}
-              />
-            )}
           </>
         )}
 
-        {/* 3. Cloud Sync Status Badge */}
+        {/* 2. Cloud Sync Status Badge */}
         <SyncStatusBadge status={syncStatus} />
 
-        {/* 4. User Profile Button & Dropdown Trigger */}
+        {/* 3. User Profile Button & Dropdown Trigger */}
         <div ref={menuRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
           <button
             onClick={() => setIsProfileMenuOpen((prev) => !prev)}
@@ -274,7 +266,7 @@ export function SyncHeader({
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
                   right: 0,
-                  width: 275,
+                  width: 280,
                   background: 'var(--bg-surface)',
                   backdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-color-strong)',
@@ -515,7 +507,76 @@ export function SyncHeader({
                     </div>
                   </div>
 
-                  {/* 3. Study Mode Selector Row */}
+                  {/* 3. Pair Buddy / Duo Hub Row */}
+                  <div
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
+                      if (onOpenDuoHub) {
+                        onOpenDuoHub();
+                      } else if (onOpenModeModal) {
+                        onOpenModeModal();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.5rem 0.625rem',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      transition: 'background 0.15s ease',
+                      userSelect: 'none',
+                    }}
+                    className="profile-menu-item"
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                      <div
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          background: isPaired ? 'rgba(52, 211, 153, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                          color: isPaired ? '#34d399' : 'var(--accent-hover)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <UserPlus style={{ width: 15, height: 15 }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Pair Buddy
+                        </div>
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                          {isPaired && partnerSnapshot
+                            ? `${partnerSnapshot.displayName || 'Buddy'} • ${
+                                Date.now() - new Date(partnerSnapshot.lastActiveAt).getTime() < 180000
+                                  ? 'Online'
+                                  : 'Offline'
+                              }`
+                            : 'Connect & study together'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: isPaired ? '#34d399' : 'var(--accent-hover)',
+                        }}
+                      >
+                        {isPaired ? 'Active' : 'Pair'}
+                      </span>
+                      <ChevronRight style={{ width: 14, height: 14, color: 'var(--text-muted)' }} />
+                    </div>
+                  </div>
+
+                  {/* 4. Study Mode Selector Row */}
                   <div
                     onClick={() => {
                       setIsProfileMenuOpen(false);
@@ -580,7 +641,7 @@ export function SyncHeader({
                     </div>
                   </div>
 
-                  {/* 4. Admin Governance Portal Link (If Admin) */}
+                  {/* 5. Admin Governance Portal Link (If Admin) */}
                   {isAdmin && (
                     <Link
                       href="/admin"
@@ -633,7 +694,7 @@ export function SyncHeader({
                     }}
                   />
 
-                  {/* 5. Sign Out Option */}
+                  {/* 6. Sign Out Option */}
                   <div
                     onClick={() => {
                       setIsProfileMenuOpen(false);
