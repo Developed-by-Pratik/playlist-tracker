@@ -136,6 +136,7 @@ export default function AdminPage() {
       <UserDirectory
         users={users}
         isLoading={isLoading}
+        onRefresh={handleRefresh}
       />
     </main>
   );

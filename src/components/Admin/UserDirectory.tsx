@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import {
   Search,
   Flame,
@@ -12,16 +12,20 @@ import {
   Clock,
   Layers,
   Users,
-  Ban,
   ShieldCheck,
+  Trash2,
+  AlertTriangle,
+  Loader2,
+  X,
 } from 'lucide-react';
-import { AdminUserRecord } from '@/lib/admin/admin-service';
-import { userBlockService, BlockedUserEntry } from '@/lib/admin/user-block-service';
+import { AdminUserRecord, adminService } from '@/lib/admin/admin-service';
 import { isUserAdmin } from '@/lib/auth';
 
 interface UserDirectoryProps {
   users: AdminUserRecord[];
   isLoading: boolean;
+  onRefresh?: () => void;
+  onUserDeleted?: (userId: string) => void;
 }
 
 function formatStudyTime(seconds: number): string {
@@ -48,82 +52,69 @@ function formatRelativeTime(isoString: string): string {
   }
 }
 
-export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
+export function UserDirectory({ users, isLoading, onRefresh, onUserDeleted }: UserDirectoryProps) {
   const [activeView, setActiveView] = useState<'users' | 'catalog'>('users');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTab, setFilterTab] = useState<'all' | 'online' | 'active_today' | 'duo' | 'suspended'>('all');
+  const [filterTab, setFilterTab] = useState<'all' | 'online' | 'active_today' | 'duo'>('all');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
-  const [blockedUsers, setBlockedUsers] = useState<BlockedUserEntry[]>(() => userBlockService.getBlockedUsers());
 
-  useEffect(() => {
-    userBlockService.init();
-    const unsub = userBlockService.subscribe(list => setBlockedUsers([...list]));
-    return unsub;
-  }, []);
-
-  const isUserSuspended = useCallback(
-    (user: AdminUserRecord): boolean => {
-      return blockedUsers.some(
-        b => b.id === user.id || b.email.toLowerCase() === user.emailOrSyncId.toLowerCase()
-      );
-    },
-    [blockedUsers]
-  );
-
-  const handleToggleBlock = async (user: AdminUserRecord) => {
-    if (isUserAdmin(user.emailOrSyncId)) {
-      alert('Administrator accounts are protected and cannot be suspended.');
-      return;
-    }
-
-    const currentlySuspended = isUserSuspended(user);
-    if (currentlySuspended) {
-      const confirmed = window.confirm(
-        `Restore access for ${user.displayName}?\n\nThey will be able to log in to the application again.`
-      );
-      if (confirmed) {
-        await userBlockService.unblockUser(user.id);
-      }
-    } else {
-      const confirmed = window.confirm(
-        `Suspend access for ${user.displayName} (${user.emailOrSyncId})?\n\nThey will be immediately blocked from logging in and directed to contact pratikkakade.in@gmail.com for access.`
-      );
-      if (confirmed) {
-        await userBlockService.blockUser({
-          id: user.id,
-          email: user.emailOrSyncId,
-          displayName: user.displayName,
-        });
-      }
-    }
-  };
+  // Hard Delete Modal State
+  const [userToDelete, setUserToDelete] = useState<AdminUserRecord | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Toggle row expansion to inspect which playlists were added
   const toggleExpand = (userId: string) => {
     setExpandedUserId(prev => (prev === userId ? null : userId));
   };
 
-  // Filtered users
+  // Perform permanent user hard delete
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const result = await adminService.hardDeleteUser(userToDelete.id, userToDelete.emailOrSyncId);
+      if (result.success) {
+        onUserDeleted?.(userToDelete.id);
+        onRefresh?.();
+        setUserToDelete(null);
+      } else {
+        setDeleteError(result.error || 'Failed to delete user. Please try again.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'An unexpected error occurred during user deletion.';
+      setDeleteError(msg);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Filtered users (strictly sorted by Last Active date descending)
   const filteredUsers = useMemo(() => {
-    return users.filter(user => {
-      const suspended = isUserSuspended(user);
+    return users
+      .filter(user => {
+        if (filterTab === 'online' && user.status !== 'online') return false;
+        if (filterTab === 'active_today' && user.status !== 'online' && user.status !== 'active_today') return false;
+        if (filterTab === 'duo' && !user.isDuoPaired) return false;
 
-      if (filterTab === 'suspended' && !suspended) return false;
-      if (filterTab === 'online' && (user.status !== 'online' || suspended)) return false;
-      if (filterTab === 'active_today' && ((user.status !== 'online' && user.status !== 'active_today') || suspended)) return false;
-      if (filterTab === 'duo' && (!user.isDuoPaired || suspended)) return false;
-
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      const matchesPlaylist = user.playlists.some(p => p.name.toLowerCase().includes(q));
-      return (
-        user.displayName.toLowerCase().includes(q) ||
-        user.emailOrSyncId.toLowerCase().includes(q) ||
-        user.activePlaylist.toLowerCase().includes(q) ||
-        matchesPlaylist
-      );
-    });
-  }, [users, filterTab, searchQuery, isUserSuspended]);
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        const matchesPlaylist = user.playlists.some(p => p.name.toLowerCase().includes(q));
+        return (
+          user.displayName.toLowerCase().includes(q) ||
+          user.emailOrSyncId.toLowerCase().includes(q) ||
+          user.activePlaylist.toLowerCase().includes(q) ||
+          matchesPlaylist
+        );
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.lastActiveAt).getTime() || 0;
+        const timeB = new Date(b.lastActiveAt).getTime() || 0;
+        return timeB - timeA;
+      });
+  }, [users, filterTab, searchQuery]);
 
   // Aggregate catalog of all playlists added across all users
   const allPlaylistsCatalog = useMemo(() => {
@@ -170,16 +161,14 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
   }, [users, searchQuery]);
 
   const counts = useMemo(() => {
-    const suspendedCount = users.filter(u => isUserSuspended(u)).length;
     return {
       all: users.length,
-      online: users.filter(u => u.status === 'online' && !isUserSuspended(u)).length,
-      activeToday: users.filter(u => (u.status === 'online' || u.status === 'active_today') && !isUserSuspended(u)).length,
-      duo: users.filter(u => u.isDuoPaired && !isUserSuspended(u)).length,
-      suspended: suspendedCount,
+      online: users.filter(u => u.status === 'online').length,
+      activeToday: users.filter(u => u.status === 'online' || u.status === 'active_today').length,
+      duo: users.filter(u => u.isDuoPaired).length,
       totalPlaylists: users.reduce((acc, u) => acc + u.playlistsCount, 0),
     };
-  }, [users, isUserSuspended]);
+  }, [users]);
 
   return (
     <div
@@ -251,7 +240,7 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
           </button>
         </div>
 
-        {/* Global Search Bar (Flexible, dynamic width) */}
+        {/* Global Search Bar */}
         <div style={{ position: 'relative', flex: '1 1 340px', maxWidth: '520px' }}>
           <Search
             style={{
@@ -307,7 +296,6 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
               { id: 'online', label: `🟢 Online Now (${counts.online})` },
               { id: 'active_today', label: `🟡 Active Today (${counts.activeToday})` },
               { id: 'duo', label: `👥 Duo Paired (${counts.duo})` },
-              { id: 'suspended', label: `🚫 Suspended (${counts.suspended})` },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -317,20 +305,10 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                   borderRadius: 9999,
                   fontSize: '0.8125rem',
                   fontWeight: filterTab === tab.id ? 700 : 500,
-                  background:
-                    filterTab === tab.id
-                      ? tab.id === 'suspended'
-                        ? '#ef4444'
-                        : 'var(--accent-primary)'
-                      : 'var(--bg-surface-2)',
+                  background: filterTab === tab.id ? 'var(--accent-primary)' : 'var(--bg-surface-2)',
                   color: filterTab === tab.id ? '#ffffff' : 'var(--text-secondary)',
                   border: '1px solid',
-                  borderColor:
-                    filterTab === tab.id
-                      ? tab.id === 'suspended'
-                        ? '#ef4444'
-                        : 'var(--accent-primary)'
-                      : 'var(--border-color)',
+                  borderColor: filterTab === tab.id ? 'var(--accent-primary)' : 'var(--border-color)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
@@ -382,15 +360,16 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                       <th style={{ padding: '1rem 1.25rem' }}>ACTIVE COURSE & PROGRESS</th>
                       <th style={{ padding: '1rem 1.25rem' }}>TODAY FOCUS</th>
                       <th style={{ padding: '1rem 1.25rem' }}>STREAK</th>
-                      <th style={{ padding: '1rem 1.25rem' }}>LAST ACTIVE</th>
-                      <th style={{ padding: '1rem 1.25rem' }}>ACCESS</th>
+                      <th style={{ padding: '1rem 1.25rem', color: 'var(--accent-hover)', fontWeight: 700 }}>
+                        LAST ACTIVE ↓
+                      </th>
+                      <th style={{ padding: '1rem 1.25rem' }}>ACTIONS</th>
                       <th style={{ padding: '1rem 1.25rem', textAlign: 'right' }}>INSPECT</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredUsers.map(user => {
                       const isExpanded = expandedUserId === user.id;
-                      const suspended = isUserSuspended(user);
                       const initials = user.displayName
                         .split(' ')
                         .map(n => n[0])
@@ -398,8 +377,8 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                         .slice(0, 2)
                         .toUpperCase();
 
-                      const isOnline = user.status === 'online' && !suspended;
-                      const isActiveToday = user.status === 'active_today' && !suspended;
+                      const isOnline = user.status === 'online';
+                      const isActiveToday = user.status === 'active_today';
 
                       return (
                         <Fragment key={user.id}>
@@ -407,11 +386,7 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                             style={{
                               borderBottom: isExpanded ? 'none' : '1px solid var(--border-color)',
                               transition: 'background 0.15s ease',
-                              background: isExpanded
-                                ? 'rgba(99, 102, 241, 0.05)'
-                                : suspended
-                                ? 'rgba(239, 68, 68, 0.03)'
-                                : 'transparent',
+                              background: isExpanded ? 'rgba(99, 102, 241, 0.05)' : 'transparent',
                             }}
                           >
                             {/* Learner Identity */}
@@ -422,9 +397,7 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                                     width: 38,
                                     height: 38,
                                     borderRadius: '50%',
-                                    background: suspended
-                                      ? 'linear-gradient(135deg, #ef4444, #991b1b)'
-                                      : 'linear-gradient(135deg, var(--accent-primary), #ec4899)',
+                                    background: 'linear-gradient(135deg, var(--accent-primary), #ec4899)',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -456,73 +429,45 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
 
                             {/* Status Pill */}
                             <td style={{ padding: '1.1rem 1.25rem' }}>
-                              {suspended ? (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  padding: '4px 10px',
+                                  borderRadius: 9999,
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  background: isOnline
+                                    ? 'rgba(16, 185, 129, 0.12)'
+                                    : isActiveToday
+                                    ? 'rgba(245, 158, 11, 0.12)'
+                                    : 'var(--bg-surface-2)',
+                                  color: isOnline
+                                    ? '#10b981'
+                                    : isActiveToday
+                                    ? '#f59e0b'
+                                    : 'var(--text-muted)',
+                                  border: `1px solid ${
+                                    isOnline
+                                      ? 'rgba(16, 185, 129, 0.3)'
+                                      : isActiveToday
+                                      ? 'rgba(245, 158, 11, 0.3)'
+                                      : 'var(--border-color)'
+                                  }`,
+                                }}
+                              >
                                 <span
                                   style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                    padding: '4px 10px',
-                                    borderRadius: 9999,
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    background: 'rgba(239, 68, 68, 0.12)',
-                                    color: '#ef4444',
-                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: '50%',
+                                    background: isOnline ? '#10b981' : isActiveToday ? '#f59e0b' : '#64748b',
+                                    boxShadow: isOnline ? '0 0 6px #10b981' : 'none',
                                   }}
-                                >
-                                  <span
-                                    style={{
-                                      width: 6,
-                                      height: 6,
-                                      borderRadius: '50%',
-                                      background: '#ef4444',
-                                      boxShadow: '0 0 6px #ef4444',
-                                    }}
-                                  />
-                                  Suspended
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                    padding: '4px 10px',
-                                    borderRadius: 9999,
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    background: isOnline
-                                      ? 'rgba(16, 185, 129, 0.12)'
-                                      : isActiveToday
-                                      ? 'rgba(245, 158, 11, 0.12)'
-                                      : 'var(--bg-surface-2)',
-                                    color: isOnline
-                                      ? '#10b981'
-                                      : isActiveToday
-                                      ? '#f59e0b'
-                                      : 'var(--text-muted)',
-                                    border: `1px solid ${
-                                      isOnline
-                                        ? 'rgba(16, 185, 129, 0.3)'
-                                        : isActiveToday
-                                        ? 'rgba(245, 158, 11, 0.3)'
-                                        : 'var(--border-color)'
-                                    }`,
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      width: 6,
-                                      height: 6,
-                                      borderRadius: '50%',
-                                      background: isOnline ? '#10b981' : isActiveToday ? '#f59e0b' : '#64748b',
-                                      boxShadow: isOnline ? '0 0 6px #10b981' : 'none',
-                                    }}
-                                  />
-                                  {isOnline ? 'Online Now' : isActiveToday ? 'Active Today' : 'Offline'}
-                                </span>
-                              )}
+                                />
+                                {isOnline ? 'Online Now' : isActiveToday ? 'Active Today' : 'Offline'}
+                              </span>
                             </td>
 
                             {/* Playlists Count with click-to-expand */}
@@ -588,7 +533,7 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                                       width: `${user.progressPct}%`,
                                       height: '100%',
                                       borderRadius: 9999,
-                                      background: suspended ? '#ef4444' : 'var(--accent-primary)',
+                                      background: 'var(--accent-primary)',
                                     }}
                                   />
                                 </div>
@@ -637,7 +582,7 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                               {formatRelativeTime(user.lastActiveAt)}
                             </td>
 
-                            {/* Access Moderation (Block / Unblock) */}
+                            {/* User Removal Action (Replaces Block) */}
                             <td style={{ padding: '1.1rem 1.25rem' }}>
                               {isUserAdmin(user.emailOrSyncId) ? (
                                 <span
@@ -660,25 +605,28 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                                 </span>
                               ) : (
                                 <button
-                                  onClick={() => handleToggleBlock(user)}
+                                  onClick={() => {
+                                    setDeleteError(null);
+                                    setUserToDelete(user);
+                                  }}
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: 5,
-                                    padding: '4px 10px',
+                                    gap: 6,
+                                    padding: '5px 12px',
                                     borderRadius: 'var(--border-radius-xs)',
                                     fontSize: '0.75rem',
                                     fontWeight: 600,
-                                    background: suspended ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.1)',
-                                    color: suspended ? '#10b981' : '#ef4444',
-                                    border: `1px solid ${suspended ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                    background: 'rgba(239, 68, 68, 0.08)',
+                                    color: '#ef4444',
+                                    border: '1px solid rgba(239, 68, 68, 0.25)',
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease',
                                   }}
-                                  title={suspended ? 'Click to restore user login access' : 'Click to block user from logging in'}
+                                  title={`Permanently delete ${user.displayName} and all associated data from the database`}
                                 >
-                                  <Ban style={{ width: 12, height: 12 }} />
-                                  <span>{suspended ? 'Unblock' : 'Block'}</span>
+                                  <Trash2 style={{ width: 12, height: 12 }} />
+                                  <span>Remove User</span>
                                 </button>
                               )}
                             </td>
@@ -708,7 +656,7 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
                             </td>
                           </tr>
 
-                          {/* INLINE EXPANDED PLAYLISTS DRAWER: Renders JUST BELOW this particular user row! */}
+                          {/* INLINE EXPANDED PLAYLISTS DRAWER */}
                           {isExpanded && (
                             <tr key={`${user.id}-expanded-drawer`} style={{ background: 'rgba(99, 102, 241, 0.04)' }}>
                               <td
@@ -941,6 +889,241 @@ export function UserDirectory({ users, isLoading }: UserDirectoryProps) {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* HARD DELETE CONFIRMATION MODAL */}
+      {userToDelete && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(6px)',
+            padding: '1.5rem',
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget && !isDeleting) {
+              setUserToDelete(null);
+            }
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '520px',
+              borderRadius: 'var(--border-radius)',
+              background: 'var(--bg-surface-solid)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 24px rgba(239, 68, 68, 0.15)',
+              overflow: 'hidden',
+              animation: 'modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '1.25rem 1.5rem',
+                borderBottom: '1px solid var(--border-color)',
+                background: 'rgba(239, 68, 68, 0.06)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: '50%',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ef4444',
+                  }}
+                >
+                  <AlertTriangle style={{ width: 18, height: 18 }} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Hard Delete User
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: 600 }}>
+                    Permanent & Irreversible Removal
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => !isDeleting && setUserToDelete(null)}
+                disabled={isDeleting}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  padding: 6,
+                  borderRadius: 'var(--border-radius-xs)',
+                }}
+              >
+                <X style={{ width: 18, height: 18 }} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Are you sure you want to permanently remove <strong style={{ color: 'var(--text-primary)' }}>{userToDelete.displayName}</strong>?
+              </p>
+
+              {/* User Summary Box */}
+              <div
+                style={{
+                  padding: '1rem',
+                  borderRadius: 'var(--border-radius-sm)',
+                  background: 'var(--bg-surface-2)',
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.8125rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4rem',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Identifier / Email:</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {userToDelete.emailOrSyncId}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Playlists Tracked:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {userToDelete.playlistsCount} playlists
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Habit Streak:</span>
+                  <span style={{ fontWeight: 600, color: '#f59e0b' }}>
+                    {userToDelete.currentStreak} days
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Today Focus Time:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {formatStudyTime(userToDelete.todayStudySeconds)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Consequence Warning Notice */}
+              <div
+                style={{
+                  padding: '0.9rem 1.1rem',
+                  borderRadius: 'var(--border-radius-sm)',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  fontSize: '0.8rem',
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ color: '#ef4444', display: 'block', marginBottom: 4 }}>
+                  ⚠️ This action will completely purge:
+                </strong>
+                <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                  <li>All saved playlists, task checklists, and video progress from the database.</li>
+                  <li>Duo buddy partnerships, 1-on-1 chat logs, and daily scratchpads.</li>
+                  <li>Study telemetry, snapshots, and authentication credentials.</li>
+                </ul>
+              </div>
+
+              {deleteError && (
+                <div
+                  style={{
+                    padding: '0.75rem 1rem',
+                    borderRadius: 'var(--border-radius-xs)',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid #ef4444',
+                    color: '#ef4444',
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                  }}
+                >
+                  {deleteError}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: 12,
+                padding: '1.1rem 1.5rem',
+                borderTop: '1px solid var(--border-color)',
+                background: 'rgba(0, 0, 0, 0.1)',
+              }}
+            >
+              <button
+                onClick={() => setUserToDelete(null)}
+                disabled={isDeleting}
+                style={{
+                  padding: '0.55rem 1.15rem',
+                  borderRadius: 'var(--border-radius-sm)',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  background: 'var(--bg-surface-2)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)',
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '0.55rem 1.35rem',
+                  borderRadius: 'var(--border-radius-sm)',
+                  fontSize: '0.8125rem',
+                  fontWeight: 700,
+                  background: '#ef4444',
+                  border: '1px solid #dc2626',
+                  color: '#ffffff',
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
+                  transition: 'all 0.15s ease',
+                  opacity: isDeleting ? 0.8 : 1,
+                }}
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 style={{ width: 14, height: 14, animation: 'spin 1s linear infinite' }} />
+                    <span>Hard Deleting User...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 style={{ width: 14, height: 14 }} />
+                    <span>Permanently Remove User</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
