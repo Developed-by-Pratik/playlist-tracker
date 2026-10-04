@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import {
   ListTodo,
-  Zap,
   Eye,
   EyeOff,
   LogOut,
@@ -30,7 +29,7 @@ import { logger } from '@/lib/observability/logger';
 
 interface SyncHeaderProps {
   loading: boolean;
-  progress: number;
+  progress?: number;
   syncStatus: CloudSyncStatus;
   hideCompleted: boolean;
   onToggleHideCompleted: () => void;
@@ -45,7 +44,6 @@ interface SyncHeaderProps {
 
 export function SyncHeader({
   loading,
-  progress,
   syncStatus,
   hideCompleted,
   onToggleHideCompleted,
@@ -58,7 +56,6 @@ export function SyncHeader({
   onOpenDuoHub,
 }: SyncHeaderProps) {
   const [user, setUser] = useState<{ name: string; avatar: string | null; email: string | null } | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
@@ -165,88 +162,7 @@ export function SyncHeader({
       <div className="flex items-center" style={{ flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
         {!loading && (
           <>
-            {/* 1. Hide / Show Completed Pill */}
-            <button
-              onClick={onToggleHideCompleted}
-              onMouseEnter={() => setIsHovered(true)}
-              onMouseLeave={() => setIsHovered(false)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: isHovered ? 'flex-start' : 'center',
-                height: 36,
-                width: isHovered ? 154 : 36,
-                paddingLeft: isHovered ? 11 : 0,
-                paddingRight: isHovered ? 10 : 0,
-                background: hideCompleted ? 'var(--accent-primary)' : 'var(--bg-surface-2)',
-                color: hideCompleted ? 'white' : 'var(--text-secondary)',
-                borderRadius: 999,
-                border: '1px solid var(--border-color)',
-                cursor: 'pointer',
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition:
-                  'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s',
-                boxSizing: 'border-box',
-                flexShrink: 0,
-              }}
-              title={hideCompleted ? 'Show Completed' : 'Hide Completed'}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 16,
-                  height: 16,
-                  flexShrink: 0,
-                }}
-              >
-                {hideCompleted ? <Eye style={{ width: 15, height: 15 }} /> : <EyeOff style={{ width: 15, height: 15 }} />}
-              </div>
-              <span
-                style={{
-                  opacity: isHovered ? 1 : 0,
-                  transform: isHovered ? 'translateX(0)' : 'translateX(-6px)',
-                  transition: 'opacity 0.15s ease-out, transform 0.15s ease-out',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  fontFamily: 'var(--font-mono)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  marginLeft: 8,
-                  pointerEvents: 'none',
-                }}
-              >
-                {hideCompleted ? 'Show Completed' : 'Hide Completed'}
-              </span>
-            </button>
-
-            {/* 2. Playlist Progress Metric Badge */}
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                height: 36,
-                background: progress === 100 ? 'var(--accent-success-light)' : 'var(--accent-light)',
-                color: progress === 100 ? 'var(--accent-success)' : 'var(--accent-hover)',
-                padding: '0 0.875rem',
-                borderRadius: 999,
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                fontFamily: 'var(--font-mono)',
-                border: `1px solid ${progress === 100 ? 'rgba(52, 211, 153, 0.2)' : 'rgba(99, 102, 241, 0.2)'}`,
-                boxShadow: progress === 100 ? '0 0 12px rgba(52, 211, 153, 0.15)' : '0 0 12px rgba(99, 102, 241, 0.15)',
-                boxSizing: 'border-box',
-                flexShrink: 0,
-              }}
-            >
-              <Zap style={{ width: 13, height: 13 }} />
-              <span>{progress}%</span>
-            </div>
-
-            {/* 3. Daily Active Study Focus Time Pill */}
+            {/* 1. Daily Active Study Focus Time Pill */}
             <div
               title="Active focus time today (automatically pauses when idle for 10m)"
               style={{
@@ -271,7 +187,7 @@ export function SyncHeader({
               <span>{formatStudyTime(studyTimeSeconds)}</span>
             </div>
 
-            {/* 4. Duo Synergy Badge (If Duo Mode Active) */}
+            {/* 2. Duo Synergy Badge (If Duo Mode Active) */}
             {collaborationEnabled && (
               <DuoSynergyBadge
                 partnership={partnership}
@@ -282,10 +198,10 @@ export function SyncHeader({
           </>
         )}
 
-        {/* 5. Cloud Sync Status Badge */}
+        {/* 3. Cloud Sync Status Badge */}
         <SyncStatusBadge status={syncStatus} />
 
-        {/* 6. User Profile Button & Dropdown Trigger */}
+        {/* 4. User Profile Button & Dropdown Trigger */}
         <div ref={menuRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
           <button
             onClick={() => setIsProfileMenuOpen((prev) => !prev)}
@@ -358,7 +274,7 @@ export function SyncHeader({
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
                   right: 0,
-                  width: 270,
+                  width: 275,
                   background: 'var(--bg-surface)',
                   backdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-color-strong)',
@@ -461,7 +377,7 @@ export function SyncHeader({
 
                 {/* Dropdown Options List */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  {/* Theme Mode Toggle Row */}
+                  {/* 1. Theme Mode Toggle Row */}
                   <div
                     onClick={toggleTheme}
                     role="button"
@@ -530,7 +446,76 @@ export function SyncHeader({
                     </div>
                   </div>
 
-                  {/* Study Mode Selector Row */}
+                  {/* 2. Hide Completed Tasks / Videos Toggle Row */}
+                  <div
+                    onClick={onToggleHideCompleted}
+                    role="button"
+                    tabIndex={0}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.5rem 0.625rem',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      transition: 'background 0.15s ease',
+                      userSelect: 'none',
+                    }}
+                    className="profile-menu-item"
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                      <div
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          background: hideCompleted ? 'rgba(99, 102, 241, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+                          color: hideCompleted ? 'var(--accent-hover)' : 'var(--text-secondary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {hideCompleted ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Hide Completed
+                        </div>
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                          {hideCompleted ? 'Done videos hidden' : 'Showing all videos'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Smooth Pill Switch */}
+                    <div
+                      style={{
+                        width: 38,
+                        height: 22,
+                        borderRadius: 999,
+                        background: hideCompleted ? 'var(--accent-primary)' : 'var(--border-color-strong)',
+                        position: 'relative',
+                        transition: 'background-color 0.2s ease',
+                        padding: 2,
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <motion.div
+                        animate={{ x: hideCompleted ? 16 : 0 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: '50%',
+                          background: '#ffffff',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 3. Study Mode Selector Row */}
                   <div
                     onClick={() => {
                       setIsProfileMenuOpen(false);
@@ -595,7 +580,7 @@ export function SyncHeader({
                     </div>
                   </div>
 
-                  {/* Admin Governance Portal Link (If Admin) */}
+                  {/* 4. Admin Governance Portal Link (If Admin) */}
                   {isAdmin && (
                     <Link
                       href="/admin"
@@ -648,7 +633,7 @@ export function SyncHeader({
                     }}
                   />
 
-                  {/* Sign Out Option */}
+                  {/* 5. Sign Out Option */}
                   <div
                     onClick={() => {
                       setIsProfileMenuOpen(false);
