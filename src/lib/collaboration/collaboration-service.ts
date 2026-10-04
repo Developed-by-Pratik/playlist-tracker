@@ -245,14 +245,14 @@ class CollaborationService {
       last_active_at: new Date().toISOString(),
     };
 
-    if (params.email) {
-      payload.email = params.email;
-    }
-
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from(SNAPSHOTS_TABLE).upsert(payload, { onConflict: 'user_id' });
-        logger.debug('collaboration', 'Pushed snapshot to cloud', { progress: params.progressPct });
+        const { error } = await supabase.from(SNAPSHOTS_TABLE).upsert(payload, { onConflict: 'user_id' });
+        if (error) {
+          logger.warn('collaboration', 'Failed to push snapshot to Supabase', { error: error.message });
+        } else {
+          logger.debug('collaboration', 'Pushed snapshot to cloud', { progress: params.progressPct });
+        }
       } catch (err) {
         logger.warn('collaboration', 'Failed to push snapshot to Supabase (table may not exist yet)', undefined, err);
       }

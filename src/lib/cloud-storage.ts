@@ -182,28 +182,23 @@ export function mergeData(local: AppData, remote: AppData): AppData {
         } else if (remoteTask && !localTask) {
           mergedTasks[vid] = remoteTask;
         } else if (localTask && remoteTask) {
-          // Merge subtasks. Match by id.
-          const subtaskMap = new Map<string, SubTask>();
-          
-          // Add remote subtasks first
-          remoteTask.subtasks.forEach(s => subtaskMap.set(s.id, { ...s }));
-          
-          // Merge local subtasks
-          localTask.subtasks.forEach(localSub => {
-            const existing = subtaskMap.get(localSub.id);
-            if (existing) {
-              // If completed in either, set as completed
-              existing.completed = existing.completed || localSub.completed;
-            } else {
-              subtaskMap.set(localSub.id, { ...localSub });
-            }
+          // Merge subtasks: the newer record defines the authoritative list of subtasks (preserving deletions and additions)
+          const baseTask = localTime >= remoteTime ? localTask : remoteTask;
+          const otherTask = localTime >= remoteTime ? remoteTask : localTask;
+          const otherMap = new Map<string, SubTask>(otherTask.subtasks.map(s => [s.id, s]));
+
+          const mergedSubtasks = baseTask.subtasks.map(baseSub => {
+            const otherSub = otherMap.get(baseSub.id);
+            return {
+              ...baseSub,
+              completed: baseSub.completed || (otherSub ? otherSub.completed : false),
+            };
           });
 
-          const mergedSubtasks = Array.from(subtaskMap.values());
           const allCompleted = mergedSubtasks.length > 0 && mergedSubtasks.every(s => s.completed);
-          
+
           // completedAt: take the oldest completedAt if both completed, or whichever exists
-          let completedAt = remoteTask.completedAt || localTask.completedAt;
+          let completedAt = baseTask.completedAt || otherTask.completedAt;
           if (!allCompleted) {
             completedAt = undefined;
           } else if (!completedAt) {
@@ -213,7 +208,7 @@ export function mergeData(local: AppData, remote: AppData): AppData {
           mergedTasks[vid] = {
             videoId: vid,
             subtasks: mergedSubtasks,
-            completedAt
+            completedAt,
           };
         }
       });
@@ -234,21 +229,20 @@ export function mergeData(local: AppData, remote: AppData): AppData {
     const remoteGoalsDate = remote.dailyGoals.lastRefreshedDate;
 
     if (localGoalsDate === remoteGoalsDate) {
-      // Same day, merge the checklist statuses
-      const goalsMap = new Map<string, DailyGoal>();
-      remote.dailyGoals.goals.forEach(g => goalsMap.set(g.id, { ...g }));
-      local.dailyGoals.goals.forEach(lg => {
-        const existing = goalsMap.get(lg.id);
-        if (existing) {
-          existing.completed = existing.completed || lg.completed;
-          existing.label = lg.label; // take local label
-        } else {
-          goalsMap.set(lg.id, { ...lg });
-        }
-      });
+      // Same day: The newer record defines the authoritative list of goals (preserving deletions, reorders, and additions)
+      const baseGoals = localTime >= remoteTime ? local.dailyGoals.goals : remote.dailyGoals.goals;
+      const otherGoals = localTime >= remoteTime ? remote.dailyGoals.goals : local.dailyGoals.goals;
+      const otherMap = new Map<string, DailyGoal>(otherGoals.map(g => [g.id, g]));
+
       mergedDailyGoals = {
         lastRefreshedDate: localGoalsDate,
-        goals: Array.from(goalsMap.values())
+        goals: baseGoals.map(baseGoal => {
+          const otherGoal = otherMap.get(baseGoal.id);
+          return {
+            ...baseGoal,
+            completed: baseGoal.completed || (otherGoal && localTime === remoteTime ? otherGoal.completed : baseGoal.completed),
+          };
+        }),
       };
     } else {
       // Different days, take the newer day
