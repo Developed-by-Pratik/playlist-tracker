@@ -123,8 +123,8 @@ export function UserDirectory({ users, isLoading, onRefresh, onUserDeleted }: Us
       name: string;
       youtubePlaylistId: string;
       videoCount: number;
-      completedTasks: number;
-      totalTasks: number;
+      completedVideos: number;
+      totalVideos: number;
       progressPct: number;
       addedAt: string;
       addedByUserName: string;
@@ -139,8 +139,8 @@ export function UserDirectory({ users, isLoading, onRefresh, onUserDeleted }: Us
           name: p.name,
           youtubePlaylistId: p.youtubePlaylistId,
           videoCount: p.videoCount,
-          completedTasks: p.completedTasks,
-          totalTasks: p.totalTasks,
+          completedVideos: p.completedVideos,
+          totalVideos: p.totalVideos,
           progressPct: p.progressPct,
           addedAt: p.addedAt,
           addedByUserName: u.displayName,
@@ -543,9 +543,12 @@ export function UserDirectory({ users, isLoading, onRefresh, onUserDeleted }: Us
                                     fontFamily: 'var(--font-mono)',
                                     color: 'var(--text-secondary)',
                                     fontWeight: 600,
+                                    whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  {user.progressPct}%
+                                  {user.totalVideos > 0
+                                    ? `${user.completedVideos}/${user.totalVideos} videos (${user.progressPct}%)`
+                                    : `${user.progressPct}%`}
                                 </span>
                               </div>
                             </td>
@@ -749,9 +752,9 @@ export function UserDirectory({ users, isLoading, onRefresh, onUserDeleted }: Us
                                           </div>
 
                                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                            <span>{pl.videoCount} videos tracked</span>
+                                            <span>{pl.videoCount} videos in playlist</span>
                                             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent-hover)' }}>
-                                              {pl.completedTasks}/{pl.totalTasks} tasks ({pl.progressPct}%)
+                                              {pl.completedVideos}/{pl.totalVideos} completed ({pl.progressPct}%)
                                             </span>
                                           </div>
 
@@ -861,9 +864,9 @@ export function UserDirectory({ users, isLoading, onRefresh, onUserDeleted }: Us
 
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: 8 }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{pl.videoCount} videos</span>
+                      <span style={{ color: 'var(--text-muted)' }}>{pl.videoCount} total videos</span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent-hover)' }}>
-                        {pl.completedTasks}/{pl.totalTasks} subtasks ({pl.progressPct}%)
+                        {pl.completedVideos}/{pl.totalVideos} completed ({pl.progressPct}%)
                       </span>
                     </div>
 

@@ -17,8 +17,8 @@ export interface AdminUserPlaylist {
   name: string;
   youtubePlaylistId: string;
   videoCount: number;
-  completedTasks: number;
-  totalTasks: number;
+  completedVideos: number;
+  totalVideos: number;
   progressPct: number;
   addedAt: string;
 }
@@ -32,6 +32,8 @@ export interface AdminUserRecord {
   playlistsCount: number;
   playlists: AdminUserPlaylist[];
   activePlaylist: string;
+  completedVideos: number;
+  totalVideos: number;
   progressPct: number;
   todayStudySeconds: number;
   todayCompleted: number;
@@ -74,30 +76,34 @@ class AdminService {
 
   /**
    * Helper to format playlist records into typed AdminUserPlaylist list
+   * Tracks actual completed videos vs total videos in playlist
    */
   private extractPlaylistsFromRecord(playlistsMap: Record<string, PlaylistRecord> | undefined): AdminUserPlaylist[] {
-    if (!playlistsMap) return [];
+    if (!playlistsMap || typeof playlistsMap !== 'object') return [];
     return Object.values(playlistsMap).map(pl => {
-      let completedTasks = 0;
-      let totalTasks = 0;
-      if (pl.tasks) {
+      let completedVideos = 0;
+      if (pl.tasks && typeof pl.tasks === 'object') {
         Object.values(pl.tasks).forEach(task => {
-          if (task.subtasks) {
-            totalTasks += task.subtasks.length;
-            completedTasks += task.subtasks.filter(s => s.completed).length;
+          const isCompleted = Boolean(
+            task.completedAt ||
+            (task.subtasks && task.subtasks.length > 0 && task.subtasks.every(s => s.completed))
+          );
+          if (isCompleted) {
+            completedVideos++;
           }
         });
       }
-      const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      const totalVideos = pl.videoCount || Math.max(Object.keys(pl.tasks || {}).length, completedVideos, 0);
+      const progressPct = totalVideos > 0 ? Math.round((completedVideos / totalVideos) * 100) : 0;
       return {
         id: pl.id,
         name: pl.name,
         youtubePlaylistId: pl.youtubePlaylistId,
-        videoCount: pl.videoCount || 0,
-        completedTasks,
-        totalTasks,
+        videoCount: totalVideos,
+        completedVideos,
+        totalVideos,
         progressPct,
-        addedAt: pl.addedAt,
+        addedAt: pl.addedAt || new Date().toISOString(),
       };
     });
   }
@@ -212,6 +218,8 @@ class AdminService {
 
             // Compute real active course and exact progress percentage from ground truth
             let activePlaylistTitle = 'None';
+            let activeCompletedVideos = 0;
+            let activeTotalVideos = 0;
             let realProgressPct = 0;
 
             if (userTracked?.playlists && Object.keys(userTracked.playlists).length > 0) {
@@ -222,20 +230,22 @@ class AdminService {
 
               if (activePl) {
                 activePlaylistTitle = activePl.name;
-                let completedTasks = 0;
-                let totalTasks = 0;
-                if (activePl.tasks) {
+                if (activePl.tasks && typeof activePl.tasks === 'object') {
                   Object.values(activePl.tasks).forEach(task => {
-                    if (task && Array.isArray(task.subtasks)) {
-                      totalTasks += task.subtasks.length;
-                      completedTasks += task.subtasks.filter(sub => sub.completed).length;
-                    }
+                    const isCompleted = Boolean(
+                      task.completedAt ||
+                      (task.subtasks && task.subtasks.length > 0 && task.subtasks.every(sub => sub.completed))
+                    );
+                    if (isCompleted) activeCompletedVideos++;
                   });
                 }
-                realProgressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                activeTotalVideos = activePl.videoCount || Math.max(Object.keys(activePl.tasks || {}).length, activeCompletedVideos, 0);
+                realProgressPct = activeTotalVideos > 0 ? Math.round((activeCompletedVideos / activeTotalVideos) * 100) : 0;
               }
             } else if (userPlaylists.length > 0) {
               activePlaylistTitle = userPlaylists[0].name;
+              activeCompletedVideos = userPlaylists[0].completedVideos;
+              activeTotalVideos = userPlaylists[0].totalVideos;
               realProgressPct = userPlaylists[0].progressPct;
             }
 
@@ -250,12 +260,14 @@ class AdminService {
             records.push({
               id: userId,
               displayName: (s.display_name as string) || `Learner (${userId.slice(0, 6)})`,
-              emailOrSyncId: userId,
+              emailOrSyncId: (s.email as string) || userId,
               avatarUrl: (s.avatar_url as string) || null,
               status: this.determineStatus(lastActive),
               playlistsCount: userPlaylists.length,
               playlists: userPlaylists,
               activePlaylist: activePlaylistTitle,
+              completedVideos: activeCompletedVideos,
+              totalVideos: activeTotalVideos,
               progressPct: realProgressPct,
               todayStudySeconds: Number(s.today_study_seconds) || 0,
               todayCompleted,
@@ -280,12 +292,15 @@ class AdminService {
                   dailyGoals?: { goals?: Array<{ completed?: boolean }> };
                   dailyGoalsHistory?: Record<string, number>;
                   collaborationEnabled?: boolean;
+                  userProfile?: { email?: string; displayName?: string };
                 }
               | undefined;
             const userPlaylists = this.extractPlaylistsFromRecord(rowData?.playlists);
             const lastActive = (row.updated_at as string) || new Date().toISOString();
 
             let activePlaylistTitle = 'None';
+            let activeCompletedVideos = 0;
+            let activeTotalVideos = 0;
             let realProgressPct = 0;
 
             if (rowData?.playlists && Object.keys(rowData.playlists).length > 0) {
@@ -296,32 +311,36 @@ class AdminService {
 
               if (activePl) {
                 activePlaylistTitle = activePl.name;
-                let completedTasks = 0;
-                let totalTasks = 0;
-                if (activePl.tasks) {
+                if (activePl.tasks && typeof activePl.tasks === 'object') {
                   Object.values(activePl.tasks).forEach(task => {
-                    if (task && Array.isArray(task.subtasks)) {
-                      totalTasks += task.subtasks.length;
-                      completedTasks += task.subtasks.filter(sub => sub.completed).length;
-                    }
+                    const isCompleted = Boolean(
+                      task.completedAt ||
+                      (task.subtasks && task.subtasks.length > 0 && task.subtasks.every(sub => sub.completed))
+                    );
+                    if (isCompleted) activeCompletedVideos++;
                   });
                 }
-                realProgressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                activeTotalVideos = activePl.videoCount || Math.max(Object.keys(activePl.tasks || {}).length, activeCompletedVideos, 0);
+                realProgressPct = activeTotalVideos > 0 ? Math.round((activeCompletedVideos / activeTotalVideos) * 100) : 0;
               }
             } else if (userPlaylists.length > 0) {
               activePlaylistTitle = userPlaylists[0].name;
+              activeCompletedVideos = userPlaylists[0].completedVideos;
+              activeTotalVideos = userPlaylists[0].totalVideos;
               realProgressPct = userPlaylists[0].progressPct;
             }
 
             records.push({
               id: syncId,
-              displayName: `Learner (${syncId.slice(0, 6)})`,
-              emailOrSyncId: syncId,
+              displayName: rowData?.userProfile?.displayName || `Learner (${syncId.slice(0, 6)})`,
+              emailOrSyncId: rowData?.userProfile?.email || syncId,
               avatarUrl: null,
               status: this.determineStatus(lastActive),
               playlistsCount: userPlaylists.length,
               playlists: userPlaylists,
               activePlaylist: activePlaylistTitle,
+              completedVideos: activeCompletedVideos,
+              totalVideos: activeTotalVideos,
               progressPct: realProgressPct,
               todayStudySeconds: 0,
               todayCompleted: rowData?.dailyGoals?.goals?.filter(g => g.completed)?.length || 0,
@@ -339,17 +358,22 @@ class AdminService {
       const local = loadData();
       const userPlaylists = this.extractPlaylistsFromRecord(local?.playlists);
       const activePl = local?.playlists && local.activePlaylistId ? local.playlists[local.activePlaylistId] : null;
+      let activeCompletedVideos = 0;
+      let activeTotalVideos = 0;
       let activeProgress = 0;
-      if (activePl?.tasks) {
-        let comp = 0;
-        let tot = 0;
-        Object.values(activePl.tasks).forEach(t => {
-          if (t && Array.isArray(t.subtasks)) {
-            tot += t.subtasks.length;
-            comp += t.subtasks.filter(s => s.completed).length;
-          }
-        });
-        if (tot > 0) activeProgress = Math.round((comp / tot) * 100);
+
+      if (activePl) {
+        if (activePl.tasks && typeof activePl.tasks === 'object') {
+          Object.values(activePl.tasks).forEach(t => {
+            const isCompleted = Boolean(
+              t.completedAt ||
+              (t.subtasks && t.subtasks.length > 0 && t.subtasks.every(s => s.completed))
+            );
+            if (isCompleted) activeCompletedVideos++;
+          });
+        }
+        activeTotalVideos = activePl.videoCount || Math.max(Object.keys(activePl.tasks || {}).length, activeCompletedVideos, 0);
+        if (activeTotalVideos > 0) activeProgress = Math.round((activeCompletedVideos / activeTotalVideos) * 100);
       }
 
       const studyTime = loadStudyTime();
@@ -362,6 +386,8 @@ class AdminService {
         playlistsCount: userPlaylists.length,
         playlists: userPlaylists,
         activePlaylist: activePl?.name || userPlaylists[0]?.name || 'None',
+        completedVideos: activeCompletedVideos,
+        totalVideos: activeTotalVideos,
         progressPct: activeProgress,
         todayStudySeconds: studyTime.seconds || 0,
         todayCompleted: local?.dailyGoals?.goals?.filter(g => g.completed)?.length || 0,

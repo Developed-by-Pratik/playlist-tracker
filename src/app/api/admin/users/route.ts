@@ -17,8 +17,8 @@ export interface RealAdminUserPlaylist {
   name: string;
   youtubePlaylistId: string;
   videoCount: number;
-  completedTasks: number;
-  totalTasks: number;
+  completedVideos: number;
+  totalVideos: number;
   progressPct: number;
   addedAt: string;
 }
@@ -32,6 +32,8 @@ export interface RealAdminUserRecord {
   playlistsCount: number;
   playlists: RealAdminUserPlaylist[];
   activePlaylist: string;
+  completedVideos: number;
+  totalVideos: number;
   progressPct: number;
   todayStudySeconds: number;
   todayCompleted: number;
@@ -62,24 +64,27 @@ function determineStatus(lastActiveAt: string): 'online' | 'active_today' | 'off
 function extractPlaylists(playlistsMap?: Record<string, PlaylistRecord>): RealAdminUserPlaylist[] {
   if (!playlistsMap || typeof playlistsMap !== 'object') return [];
   return Object.values(playlistsMap).map(pl => {
-    let completedTasks = 0;
-    let totalTasks = 0;
+    let completedVideos = 0;
     if (pl.tasks && typeof pl.tasks === 'object') {
       Object.values(pl.tasks).forEach(task => {
-        if (task && Array.isArray(task.subtasks)) {
-          totalTasks += task.subtasks.length;
-          completedTasks += task.subtasks.filter(s => s.completed).length;
+        const isCompleted = Boolean(
+          task.completedAt ||
+          (task.subtasks && task.subtasks.length > 0 && task.subtasks.every(s => s.completed))
+        );
+        if (isCompleted) {
+          completedVideos++;
         }
       });
     }
-    const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    const totalVideos = pl.videoCount || Math.max(Object.keys(pl.tasks || {}).length, completedVideos, 0);
+    const progressPct = totalVideos > 0 ? Math.round((completedVideos / totalVideos) * 100) : 0;
     return {
       id: pl.id,
       name: pl.name,
       youtubePlaylistId: pl.youtubePlaylistId,
-      videoCount: pl.videoCount || 0,
-      completedTasks,
-      totalTasks,
+      videoCount: totalVideos,
+      completedVideos,
+      totalVideos,
       progressPct,
       addedAt: pl.addedAt || new Date().toISOString(),
     };
@@ -249,6 +254,8 @@ export async function GET(request: NextRequest) {
 
       // Ground truth active playlist and progress resolution
       let activePlaylistName = 'None';
+      let activeCompletedVideos = 0;
+      let activeTotalVideos = 0;
       let realProgressPct = 0;
 
       if (trackerData?.playlists && Object.keys(trackerData.playlists).length > 0) {
@@ -259,20 +266,22 @@ export async function GET(request: NextRequest) {
 
         if (activePl) {
           activePlaylistName = activePl.name;
-          let completed = 0;
-          let total = 0;
           if (activePl.tasks && typeof activePl.tasks === 'object') {
-            Object.values(activePl.tasks).forEach(t => {
-              if (t && Array.isArray(t.subtasks)) {
-                total += t.subtasks.length;
-                completed += t.subtasks.filter(s => s.completed).length;
-              }
+            Object.values(activePl.tasks).forEach(task => {
+              const isCompleted = Boolean(
+                task.completedAt ||
+                (task.subtasks && task.subtasks.length > 0 && task.subtasks.every(s => s.completed))
+              );
+              if (isCompleted) activeCompletedVideos++;
             });
           }
-          realProgressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+          activeTotalVideos = activePl.videoCount || Math.max(Object.keys(activePl.tasks || {}).length, activeCompletedVideos, 0);
+          realProgressPct = activeTotalVideos > 0 ? Math.round((activeCompletedVideos / activeTotalVideos) * 100) : 0;
         }
       } else if (playlists.length > 0) {
         activePlaylistName = playlists[0].name;
+        activeCompletedVideos = playlists[0].completedVideos;
+        activeTotalVideos = playlists[0].totalVideos;
         realProgressPct = playlists[0].progressPct;
       }
 
@@ -302,6 +311,8 @@ export async function GET(request: NextRequest) {
         playlistsCount: playlists.length,
         playlists,
         activePlaylist: activePlaylistName,
+        completedVideos: activeCompletedVideos,
+        totalVideos: activeTotalVideos,
         progressPct: realProgressPct,
         todayStudySeconds,
         todayCompleted,
