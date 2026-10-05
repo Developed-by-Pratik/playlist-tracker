@@ -31,8 +31,10 @@ import { collaborationService } from '@/lib/collaboration/collaboration-service'
 import { duoChatService } from '@/lib/collaboration/chat-service';
 import { fireMilestoneBlast } from '@/lib/celebration/confetti';
 import { DuoPartnership, PartnerSnapshot } from '@/lib/types/collaboration';
+import { useTheme } from '@/components/ThemeProvider';
+import { logger } from '@/lib/observability/logger';
 
-import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus, mergeData } from '@/lib/cloud-storage';
+import { loadFromCloud, subscribeToCloudChanges, CloudSyncStatus, mergeData, syncToCloud } from '@/lib/cloud-storage';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 const DEFAULT_ICONS: Record<string, React.ComponentType<{ style?: React.CSSProperties }>> = {
@@ -49,14 +51,13 @@ const parseISODuration = (duration: string) => {
   return (parseInt(match[1] || '0') * 3600) + (parseInt(match[2] || '0') * 60) + parseInt(match[3] || '0');
 };
 
-
-
 const containerVariants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.05 } }
 };
 
 export default function Home() {
+  const { theme, setTheme } = useTheme();
   const [data, setData] = useState<AppData | null>(() => {
     if (typeof window !== 'undefined') {
       return loadData();
@@ -72,7 +73,13 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>(() =>
     isSupabaseConfigured() ? 'syncing' : 'unconfigured'
   );
-  const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideCompleted, setHideCompleted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const initial = loadData();
+      return initial.userPreferences?.hideCompleted ?? false;
+    }
+    return false;
+  });
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isModeModalOpen, setIsModeModalOpen] = useState(false);
@@ -86,16 +93,46 @@ export default function Home() {
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('sidebar_collapsed') === 'true';
+      const initial = loadData();
+      return initial.userPreferences?.sidebarCollapsed ?? (localStorage.getItem('sidebar_collapsed') === 'true');
     }
     return false;
   });
+
+  const handleToggleTheme = useCallback(() => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    const currentData = dataRef.current;
+    if (currentData) {
+      const nextData: AppData = {
+        ...currentData,
+        userPreferences: {
+          ...currentData.userPreferences,
+          theme: nextTheme,
+        },
+      };
+      saveData(nextData);
+      setData(nextData);
+    }
+  }, [theme, setTheme]);
 
   const toggleSidebarCollapsed = useCallback(() => {
     setIsSidebarCollapsed(prev => {
       const next = !prev;
       if (typeof window !== 'undefined') {
         localStorage.setItem('sidebar_collapsed', String(next));
+      }
+      const currentData = dataRef.current;
+      if (currentData) {
+        const nextData: AppData = {
+          ...currentData,
+          userPreferences: {
+            ...currentData.userPreferences,
+            sidebarCollapsed: next,
+          },
+        };
+        saveData(nextData);
+        setData(nextData);
       }
       return next;
     });
@@ -163,37 +200,101 @@ export default function Home() {
     };
   }, []);
 
+  // Centralized account data synchronization and realtime subscription
   useEffect(() => {
-    if (isSupabaseConfigured()) {
-      loadFromCloud()
-        .then(cloud => {
-          if (cloud) {
-            setData(prev => {
-              const local = prev || loadData();
-              const merged = mergeData(local, cloud);
-              localStorage.setItem('playlist_tracker_data', JSON.stringify(merged));
-              return merged;
-            });
-            setSyncStatus('synced');
-            setTimeout(() => setSyncStatus('idle'), 2000);
-          } else {
-            setSyncStatus('idle');
+    let unsubRealtime: (() => void) | null = null;
+
+    const applyPreferencesFromData = (appData: AppData) => {
+      if (appData.userPreferences) {
+        if (appData.userPreferences.theme && appData.userPreferences.theme !== theme) {
+          setTheme(appData.userPreferences.theme);
+        }
+        if (appData.userPreferences.hideCompleted !== undefined) {
+          setHideCompleted(appData.userPreferences.hideCompleted);
+        }
+        if (appData.userPreferences.sidebarCollapsed !== undefined) {
+          setIsSidebarCollapsed(appData.userPreferences.sidebarCollapsed);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('sidebar_collapsed', String(appData.userPreferences.sidebarCollapsed));
+          }
+        }
+      }
+    };
+
+    const syncAccountData = async () => {
+      if (!isSupabaseConfigured() || !supabase) {
+        setSyncStatus('idle');
+        return;
+      }
+
+      setSyncStatus('syncing');
+      try {
+        const cloud = await loadFromCloud();
+        if (cloud) {
+          const local = dataRef.current || loadData();
+          const merged = mergeData(local, cloud);
+          localStorage.setItem('playlist_tracker_data', JSON.stringify(merged));
+          setData(merged);
+          applyPreferencesFromData(merged);
+          setSyncStatus('synced');
+          setTimeout(() => setSyncStatus('idle'), 2000);
+        } else {
+          // New account or first-time sync
+          const local = dataRef.current || loadData();
+          if (local && (Object.keys(local.playlists).length > 0 || (local.resources && local.resources.length > 0))) {
+            await syncToCloud(local);
+          }
+          setSyncStatus('idle');
+        }
+      } catch (err) {
+        logger.error('cloud-sync', 'Failed during cloud data synchronization', undefined, err);
+        setSyncStatus('error');
+        setTimeout(() => setSyncStatus('idle'), 4000);
+      }
+
+      if (unsubRealtime) {
+        unsubRealtime();
+      }
+
+      unsubRealtime = subscribeToCloudChanges(remoteData => {
+        isRemoteUpdate.current = true;
+        setData(prev => {
+          const base = prev || loadData();
+          const merged = mergeData(base, remoteData);
+          localStorage.setItem('playlist_tracker_data', JSON.stringify(merged));
+          applyPreferencesFromData(merged);
+          return merged;
+        });
+        setSyncStatus('synced');
+        setTimeout(() => setSyncStatus('idle'), 2000);
+        isRemoteUpdate.current = false;
+      });
+    };
+
+    syncAccountData();
+
+    // Listen for auth state transitions (sign in, user switch)
+    const { data: authSub } = supabase
+      ? supabase.auth.onAuthStateChange((event) => {
+          if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+            logger.info('auth', `Auth event ${event} detected, refreshing account data`);
+            syncAccountData();
+          } else if (event === 'SIGNED_OUT') {
+            logger.info('auth', 'Auth signed out, terminating realtime subscription');
+            if (unsubRealtime) {
+              unsubRealtime();
+              unsubRealtime = null;
+            }
           }
         })
-        .catch(() => {
-          setSyncStatus('error');
-          setTimeout(() => setSyncStatus('idle'), 4000);
-        });
-    }
+      : { data: { subscription: { unsubscribe: () => {} } } };
 
-    const unsubscribe = subscribeToCloudChanges(remoteData => {
-      isRemoteUpdate.current = true;
-      setData(prev => prev ? mergeData(prev, remoteData) : remoteData);
-      setSyncStatus('synced');
-      setTimeout(() => setSyncStatus('idle'), 2000);
-      isRemoteUpdate.current = false;
-    });
-    return unsubscribe;
+    return () => {
+      authSub.subscription.unsubscribe();
+      if (unsubRealtime) {
+        unsubRealtime();
+      }
+    };
   }, []);
 
   // Fetch videos when active playlist changes
@@ -270,6 +371,18 @@ export default function Home() {
             setExpandedVideoId(null);
           }
         }
+      }
+      const currentData = dataRef.current;
+      if (currentData) {
+        const nextData: AppData = {
+          ...currentData,
+          userPreferences: {
+            ...currentData.userPreferences,
+            hideCompleted: next,
+          },
+        };
+        saveData(nextData);
+        setData(nextData);
       }
       return next;
     });
@@ -603,6 +716,7 @@ export default function Home() {
           syncStatus={syncStatus}
           hideCompleted={hideCompleted}
           onToggleHideCompleted={handleToggleHideCompleted}
+          onToggleTheme={handleToggleTheme}
           activePlaylistName={activePlaylist?.name}
           studyTimeSeconds={studyTimeSeconds}
           collaborationEnabled={data?.collaborationEnabled ?? false}

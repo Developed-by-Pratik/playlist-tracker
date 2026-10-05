@@ -54,6 +54,12 @@ export interface UserProfile {
   avatarUrl?: string | null;
 }
 
+export interface UserPreferences {
+  theme?: 'dark' | 'light';
+  hideCompleted?: boolean;
+  sidebarCollapsed?: boolean;
+}
+
 export interface AppData {
   settings: UserSettings;
   playlists: Record<string, PlaylistRecord>; // playlistId → PlaylistRecord
@@ -63,6 +69,7 @@ export interface AppData {
   resources?: StudyResource[];
   collaborationEnabled?: boolean;
   userProfile?: UserProfile;
+  userPreferences?: UserPreferences;
   tasks?: Record<string, TaskRecord>; // LEGACY — only present during migration
   updatedAt?: string; // ISO timestamp of last change
 }

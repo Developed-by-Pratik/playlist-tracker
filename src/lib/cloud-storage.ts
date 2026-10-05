@@ -25,8 +25,9 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabase';
-import { AppData, PlaylistRecord, TaskRecord, SubTask, DailyGoal } from './types';
+import { AppData, PlaylistRecord, TaskRecord, SubTask, DailyGoal, StudyResource, UserPreferences } from './types';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { logger } from '@/lib/observability/logger';
 
 const TABLE = 'tracker_data';
 
@@ -37,7 +38,7 @@ if (typeof window !== 'undefined' && isSupabaseConfigured() && supabase) {
   supabase.auth.getSession().then(({ data }) => {
     cachedSyncId = data.session?.user?.id ?? null;
   });
-  supabase.auth.onAuthStateChange((event, session) => {
+  supabase.auth.onAuthStateChange((_event, session) => {
     cachedSyncId = session?.user?.id ?? null;
   });
 }
@@ -59,10 +60,20 @@ export async function syncToCloud(data: AppData): Promise<void> {
   if (!isSupabaseConfigured() || !supabase) return;
   const syncId = await getSyncId();
   if (!syncId) return; // Not signed in — skip cloud sync
-  await supabase.from(TABLE).upsert(
+
+  const { error } = await supabase.from(TABLE).upsert(
     { sync_id: syncId, data, updated_at: new Date().toISOString() },
     { onConflict: 'sync_id' }
   );
+
+  if (error) {
+    logger.error('cloud-sync', 'Failed to upsert tracker data to Supabase', { syncId }, error);
+    throw error;
+  }
+  logger.debug('cloud-sync', 'Successfully synced tracker data to Supabase', {
+    syncId,
+    resourcesCount: data.resources?.length || 0,
+  });
 }
 
 /** Load the current AppData from Supabase. Returns null if not found yet. */
@@ -75,13 +86,27 @@ export async function loadFromCloud(): Promise<AppData | null> {
     .select('data')
     .eq('sync_id', syncId)
     .single();
-  if (error || !data) return null;
-  return data.data as AppData;
+
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') {
+      logger.warn('cloud-sync', 'Could not load data from cloud', { syncId }, error);
+    }
+    return null;
+  }
+
+  const cloudData = data.data as AppData;
+  logger.info('cloud-sync', 'Loaded tracker data from cloud', {
+    syncId,
+    playlistsCount: Object.keys(cloudData.playlists || {}).length,
+    resourcesCount: cloudData.resources?.length || 0,
+    hasUserPreferences: !!cloudData.userPreferences,
+  });
+  return cloudData;
 }
 
 /**
- * Merges remote data into local data using Last-Write-Wins (LWW) protocol.
- * The newer updatedAt timestamp decides which data copy is the source of truth.
+ * Merges remote data into local data using Last-Write-Wins (LWW) protocol
+ * with granular merging for Playlists, Subtasks, Daily Goals, Resources, and User Preferences.
  */
 export function mergeData(local: AppData, remote: AppData): AppData {
   const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
@@ -93,10 +118,12 @@ export function mergeData(local: AppData, remote: AppData): AppData {
 
   // Helper to compare data content ignoring updatedAt and key ordering
   const isContentEqual = (a: AppData, b: AppData) => {
-    const { updatedAt: _a, ...restA } = a;
-    const { updatedAt: _b, ...restB } = b;
+    const { updatedAt: _, ...restA } = a;
+    const { updatedAt: __, ...restB } = b;
+    void _;
+    void __;
 
-    const canonicalStringify = (obj: any): string => {
+    const canonicalStringify = (obj: unknown): string => {
       if (obj === null || obj === undefined) {
         return 'null';
       }
@@ -106,10 +133,11 @@ export function mergeData(local: AppData, remote: AppData): AppData {
       if (Array.isArray(obj)) {
         return '[' + obj.map(canonicalStringify).join(',') + ']';
       }
-      const sortedKeys = Object.keys(obj)
-        .filter(key => obj[key] !== undefined && obj[key] !== null)
+      const record = obj as Record<string, unknown>;
+      const sortedKeys = Object.keys(record)
+        .filter(key => record[key] !== undefined && record[key] !== null)
         .sort();
-      const pairs = sortedKeys.map(key => `${JSON.stringify(key)}:${canonicalStringify(obj[key])}`);
+      const pairs = sortedKeys.map(key => `${JSON.stringify(key)}:${canonicalStringify(record[key])}`);
       return '{' + pairs.join(',') + '}';
     };
 
@@ -142,29 +170,19 @@ export function mergeData(local: AppData, remote: AppData): AppData {
     const remotePl = remote.playlists?.[pid];
 
     if (localPl && !remotePl) {
-      // Playlist exists in local but not remote.
-      // Was it added locally after the remote's last update?
-      // Or was it deleted remotely after local added it?
       const addedTime = new Date(localPl.addedAt).getTime();
       if (addedTime > remoteTime) {
-        // Added locally after remote's last sync
         mergedPlaylists[pid] = localPl;
       } else if (localTime > remoteTime) {
-        // Local is newer, keep it
         mergedPlaylists[pid] = localPl;
       }
-      // Otherwise, it was probably deleted remotely, so we omit it.
     } else if (remotePl && !localPl) {
-      // Playlist exists in remote but not local.
       const addedTime = new Date(remotePl.addedAt).getTime();
       if (addedTime > localTime) {
-        // Added remotely after local's last sync
         mergedPlaylists[pid] = remotePl;
       } else if (remoteTime > localTime) {
-        // Remote is newer, keep it
         mergedPlaylists[pid] = remotePl;
       }
-      // Otherwise, it was probably deleted locally, so we omit it.
     } else if (localPl && remotePl) {
       // Playlist exists in both. Merge their tasks!
       const mergedTasks: Record<string, TaskRecord> = {};
@@ -182,7 +200,7 @@ export function mergeData(local: AppData, remote: AppData): AppData {
         } else if (remoteTask && !localTask) {
           mergedTasks[vid] = remoteTask;
         } else if (localTask && remoteTask) {
-          // Merge subtasks: the newer record defines the authoritative list of subtasks (preserving deletions and additions)
+          // Merge subtasks: the newer record defines the authoritative list of subtasks
           const baseTask = localTime >= remoteTime ? localTask : remoteTask;
           const otherTask = localTime >= remoteTime ? remoteTask : localTask;
           const otherMap = new Map<string, SubTask>(otherTask.subtasks.map(s => [s.id, s]));
@@ -197,7 +215,6 @@ export function mergeData(local: AppData, remote: AppData): AppData {
 
           const allCompleted = mergedSubtasks.length > 0 && mergedSubtasks.every(s => s.completed);
 
-          // completedAt: take the oldest completedAt if both completed, or whichever exists
           let completedAt = baseTask.completedAt || otherTask.completedAt;
           if (!allCompleted) {
             completedAt = undefined;
@@ -229,7 +246,6 @@ export function mergeData(local: AppData, remote: AppData): AppData {
     const remoteGoalsDate = remote.dailyGoals.lastRefreshedDate;
 
     if (localGoalsDate === remoteGoalsDate) {
-      // Same day: The newer record defines the authoritative list of goals (preserving deletions, reorders, and additions)
       const baseGoals = localTime >= remoteTime ? local.dailyGoals.goals : remote.dailyGoals.goals;
       const otherGoals = localTime >= remoteTime ? remote.dailyGoals.goals : local.dailyGoals.goals;
       const otherMap = new Map<string, DailyGoal>(otherGoals.map(g => [g.id, g]));
@@ -245,7 +261,6 @@ export function mergeData(local: AppData, remote: AppData): AppData {
         }),
       };
     } else {
-      // Different days, take the newer day
       mergedDailyGoals = localGoalsDate > remoteGoalsDate ? local.dailyGoals : remote.dailyGoals;
     }
   }
@@ -262,6 +277,64 @@ export function mergeData(local: AppData, remote: AppData): AppData {
     mergedHistory[date] = Math.max(localVal, remoteVal);
   });
 
+  // Deep merge resources by resource ID
+  const localResources = local.resources || [];
+  const remoteResources = remote.resources || [];
+  let mergedResources: StudyResource[];
+
+  if (localResources.length === 0 && remoteResources.length > 0) {
+    mergedResources = remoteResources;
+  } else if (remoteResources.length === 0 && localResources.length > 0) {
+    mergedResources = localResources;
+  } else {
+    const resourceMap = new Map<string, StudyResource>();
+    remoteResources.forEach(res => {
+      resourceMap.set(res.id, res);
+    });
+
+    localResources.forEach(localRes => {
+      const remoteRes = resourceMap.get(localRes.id);
+      if (!remoteRes) {
+        const addedTime = localRes.createdAt ? new Date(localRes.createdAt).getTime() : 0;
+        if (addedTime > remoteTime || localTime >= remoteTime) {
+          resourceMap.set(localRes.id, localRes);
+        }
+      } else {
+        const chosen = localTime >= remoteTime ? localRes : remoteRes;
+        resourceMap.set(localRes.id, chosen);
+      }
+    });
+
+    // Check if any deleted remotely or locally
+    if (localTime > remoteTime) {
+      remoteResources.forEach(remRes => {
+        const createdTime = remRes.createdAt ? new Date(remRes.createdAt).getTime() : 0;
+        if (!localResources.some(lr => lr.id === remRes.id) && createdTime < localTime) {
+          resourceMap.delete(remRes.id);
+        }
+      });
+    }
+
+    mergedResources = Array.from(resourceMap.values()).sort((a, b) => {
+      const tA = new Date(a.createdAt || 0).getTime();
+      const tB = new Date(b.createdAt || 0).getTime();
+      return tB - tA;
+    });
+  }
+
+  // Merge User Preferences per account
+  const mergedUserPreferences: UserPreferences = {
+    theme: newer.userPreferences?.theme ?? local.userPreferences?.theme ?? remote.userPreferences?.theme ?? 'dark',
+    hideCompleted: newer.userPreferences?.hideCompleted ?? local.userPreferences?.hideCompleted ?? remote.userPreferences?.hideCompleted ?? false,
+    sidebarCollapsed: newer.userPreferences?.sidebarCollapsed ?? local.userPreferences?.sidebarCollapsed ?? remote.userPreferences?.sidebarCollapsed ?? false,
+  };
+
+  // Merge User Profile
+  const mergedUserProfile = newer.userProfile || local.userProfile || remote.userProfile;
+
+  // Merge Collaboration State
+  const mergedCollaborationEnabled = newer.collaborationEnabled ?? local.collaborationEnabled ?? remote.collaborationEnabled ?? false;
+
   // Assemble the merged AppData
   const mergedData: AppData = {
     settings: {
@@ -271,14 +344,16 @@ export function mergeData(local: AppData, remote: AppData): AppData {
     activePlaylistId: newer.activePlaylistId,
     dailyGoals: mergedDailyGoals,
     dailyGoalsHistory: Object.keys(mergedHistory).length > 0 ? mergedHistory : undefined,
-    resources: newer.resources ?? local.resources ?? remote.resources ?? [],
-    collaborationEnabled: newer.collaborationEnabled ?? local.collaborationEnabled ?? remote.collaborationEnabled ?? false,
+    resources: mergedResources,
+    collaborationEnabled: mergedCollaborationEnabled,
+    userProfile: mergedUserProfile,
+    userPreferences: mergedUserPreferences,
     updatedAt: new Date().toISOString()
   };
 
   // If local was the winner, but we resolved merges, or vice-versa, make sure to sync back
   if (localTime > remoteTime || JSON.stringify(mergedData) !== JSON.stringify(remote)) {
-    syncToCloud(mergedData).catch(err => console.warn('[cloud-sync] push merged data failed:', err));
+    syncToCloud(mergedData).catch(err => logger.warn('cloud-sync', 'Failed to push merged data to cloud', undefined, err));
   }
 
   return mergedData;
@@ -294,7 +369,8 @@ export function subscribeToCloudChanges(onUpdate: (data: AppData) => void): () =
   let unsubscribed = false;
   let localChannel: RealtimeChannel | null = null;
 
-  getSyncId().then(syncId => {
+  const initSubscription = async () => {
+    const syncId = await getSyncId();
     if (unsubscribed || !syncId || !supabase) return;
 
     // Use a unique channel name per subscription instance to avoid React StrictMode double-mount conflicts
@@ -312,11 +388,18 @@ export function subscribeToCloudChanges(onUpdate: (data: AppData) => void): () =
         },
         payload => {
           const newRow = payload.new as { data: AppData };
-          if (newRow?.data) onUpdate(newRow.data);
+          if (newRow?.data) {
+            logger.info('cloud-sync', 'Received realtime cloud update from remote device', { syncId });
+            onUpdate(newRow.data);
+          }
         }
       )
-      .subscribe();
-  });
+      .subscribe((status) => {
+        logger.debug('cloud-sync', `Realtime channel subscription status: ${status}`, { syncId });
+      });
+  };
+
+  initSubscription();
 
   return () => {
     unsubscribed = true;

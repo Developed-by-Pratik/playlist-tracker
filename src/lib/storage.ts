@@ -1,5 +1,6 @@
 import { AppData, TaskRecord, SubTask, PlaylistRecord, DailyGoal } from './types';
 import { syncToCloud } from './cloud-storage';
+import { logger } from '@/lib/observability/logger';
 
 const STORAGE_KEY = 'playlist_tracker_data';
 
@@ -11,6 +12,11 @@ const defaultData: AppData = {
   settings: { youtubeApiKey: '' },
   playlists: {},
   activePlaylistId: null,
+  userPreferences: {
+    theme: 'dark',
+    hideCompleted: false,
+    sidebarCollapsed: false,
+  },
 };
 
 export const getLocalDateString = (): string => {
@@ -42,6 +48,12 @@ function normalizeData(parsed: Partial<AppData>): AppData {
     dailyGoalsHistory: parsed.dailyGoalsHistory || {},
     resources: parsed.resources || [],
     collaborationEnabled: parsed.collaborationEnabled ?? false,
+    userProfile: parsed.userProfile,
+    userPreferences: {
+      theme: parsed.userPreferences?.theme || 'dark',
+      hideCompleted: parsed.userPreferences?.hideCompleted ?? false,
+      sidebarCollapsed: parsed.userPreferences?.sidebarCollapsed ?? false,
+    },
     dailyGoals: parsed.dailyGoals || {
       lastRefreshedDate: getLocalDateString(),
       goals: [
@@ -62,7 +74,7 @@ export const loadData = (): AppData => {
     try {
       return normalizeData(JSON.parse(stored));
     } catch (e) {
-      console.error('Failed to parse app data', e);
+      logger.error('storage', 'Failed to parse app data from localStorage', undefined, e);
       return defaultData;
     }
   }
@@ -73,7 +85,7 @@ export const saveData = (data: AppData): void => {
   if (typeof window === 'undefined') return;
   data.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  syncToCloud(data).catch(err => console.warn('[cloud-sync] write failed:', err));
+  syncToCloud(data).catch(err => logger.warn('cloud-sync', 'Failed to push sync data to cloud', undefined, err));
 };
 
 // ── Playlist CRUD ──────────────────────────────────────────────────────────────

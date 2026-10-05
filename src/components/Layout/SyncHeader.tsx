@@ -40,6 +40,7 @@ interface SyncHeaderProps {
   partnership?: DuoPartnership | null;
   partnerSnapshot?: PartnerSnapshot | null;
   onOpenDuoHub?: () => void;
+  onToggleTheme?: () => void;
 }
 
 export function SyncHeader({
@@ -54,12 +55,21 @@ export function SyncHeader({
   partnership = null,
   partnerSnapshot = null,
   onOpenDuoHub,
+  onToggleTheme,
 }: SyncHeaderProps) {
   const [user, setUser] = useState<{ name: string; avatar: string | null; email: string | null } | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
+
+  const handleThemeToggle = () => {
+    if (onToggleTheme) {
+      onToggleTheme();
+    } else {
+      toggleTheme();
+    }
+  };
 
   useEffect(() => {
     supabase?.auth.getUser().then(({ data, error }) => {
@@ -371,7 +381,7 @@ export function SyncHeader({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   {/* 1. Theme Mode Toggle Row */}
                   <div
-                    onClick={toggleTheme}
+                    onClick={handleThemeToggle}
                     role="button"
                     tabIndex={0}
                     style={{
