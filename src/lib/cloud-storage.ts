@@ -323,10 +323,19 @@ export function mergeData(local: AppData, remote: AppData): AppData {
   }
 
   // Merge User Preferences per account
+  const localHasPrefs = !!local.userPreferences;
+  const remoteHasPrefs = !!remote.userPreferences;
+  const preferredSource = localTime >= remoteTime ? (localHasPrefs ? local : remote) : (remoteHasPrefs ? remote : local);
+  const fallbackSource = preferredSource === local ? remote : local;
+
   const mergedUserPreferences: UserPreferences = {
-    theme: newer.userPreferences?.theme ?? local.userPreferences?.theme ?? remote.userPreferences?.theme ?? 'dark',
-    hideCompleted: newer.userPreferences?.hideCompleted ?? local.userPreferences?.hideCompleted ?? remote.userPreferences?.hideCompleted ?? false,
-    sidebarCollapsed: newer.userPreferences?.sidebarCollapsed ?? local.userPreferences?.sidebarCollapsed ?? remote.userPreferences?.sidebarCollapsed ?? false,
+    theme: preferredSource.userPreferences?.theme ?? fallbackSource.userPreferences?.theme ?? 'dark',
+    hideCompleted: preferredSource.userPreferences?.hideCompleted !== undefined
+      ? preferredSource.userPreferences.hideCompleted
+      : (fallbackSource.userPreferences?.hideCompleted ?? false),
+    sidebarCollapsed: preferredSource.userPreferences?.sidebarCollapsed !== undefined
+      ? preferredSource.userPreferences.sidebarCollapsed
+      : (fallbackSource.userPreferences?.sidebarCollapsed ?? false),
   };
 
   // Merge User Profile

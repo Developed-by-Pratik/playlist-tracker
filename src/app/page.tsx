@@ -5,7 +5,7 @@ import {
   loadData, saveData, updateTask, addPlaylist, removePlaylist, 
   setActivePlaylist, updatePlaylistVideoCount, renamePlaylist,
   toggleDailyGoal, addDailyGoal, deleteDailyGoal, resetDailyGoalsCompleted,
-  reorderDailyGoals, reorderPlaylists
+  reorderDailyGoals, reorderPlaylists, updateUserPreferences, clearUserData
 } from '@/lib/storage';
 import { AppData, Video, DailyGoal, StudyResource } from '@/lib/types';
 import { 
@@ -99,21 +99,19 @@ export default function Home() {
     return false;
   });
 
+  // Keep a stable ref to data to avoid re-creating callbacks that depend on it
+  const dataRef = useRef<AppData | null>(data);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
   const handleToggleTheme = useCallback(() => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(nextTheme);
-    const currentData = dataRef.current;
-    if (currentData) {
-      const nextData: AppData = {
-        ...currentData,
-        userPreferences: {
-          ...currentData.userPreferences,
-          theme: nextTheme,
-        },
-      };
-      saveData(nextData);
-      setData(nextData);
-    }
+    const currentData = dataRef.current || loadData();
+    const nextData = updateUserPreferences({ theme: nextTheme }, currentData);
+    dataRef.current = nextData;
+    setData(nextData);
   }, [theme, setTheme]);
 
   const toggleSidebarCollapsed = useCallback(() => {
@@ -122,30 +120,16 @@ export default function Home() {
       if (typeof window !== 'undefined') {
         localStorage.setItem('sidebar_collapsed', String(next));
       }
-      const currentData = dataRef.current;
-      if (currentData) {
-        const nextData: AppData = {
-          ...currentData,
-          userPreferences: {
-            ...currentData.userPreferences,
-            sidebarCollapsed: next,
-          },
-        };
-        saveData(nextData);
-        setData(nextData);
-      }
+      const currentData = dataRef.current || loadData();
+      const nextData = updateUserPreferences({ sidebarCollapsed: next }, currentData);
+      dataRef.current = nextData;
+      setData(nextData);
       return next;
     });
   }, []);
 
   const isRemoteUpdate = useRef(false);
   const lastPlaylistId = useRef<string | null>(null);
-
-  // Keep a stable ref to data to avoid re-creating callbacks that depend on it
-  const dataRef = useRef<AppData | null>(null);
-  useEffect(() => {
-    dataRef.current = data;
-  }, [data]);
 
   const studyTimeSecondsRef = useRef(studyTimeSeconds);
   useEffect(() => {
@@ -262,6 +246,7 @@ export default function Home() {
           const base = prev || loadData();
           const merged = mergeData(base, remoteData);
           localStorage.setItem('playlist_tracker_data', JSON.stringify(merged));
+          dataRef.current = merged;
           applyPreferencesFromData(merged);
           return merged;
         });
@@ -280,11 +265,19 @@ export default function Home() {
             logger.info('auth', `Auth event ${event} detected, refreshing account data`);
             syncAccountData();
           } else if (event === 'SIGNED_OUT') {
-            logger.info('auth', 'Auth signed out, terminating realtime subscription');
+            logger.info('auth', 'Auth signed out, terminating realtime subscription and resetting account state');
             if (unsubRealtime) {
               unsubRealtime();
               unsubRealtime = null;
             }
+            clearUserData();
+            const cleanData = loadData();
+            setData(cleanData);
+            dataRef.current = cleanData;
+            setHideCompleted(cleanData.userPreferences?.hideCompleted ?? false);
+            setIsSidebarCollapsed(cleanData.userPreferences?.sidebarCollapsed ?? false);
+            setPartnership(null);
+            setPartnerSnapshot(null);
           }
         })
       : { data: { subscription: { unsubscribe: () => {} } } };
@@ -361,32 +354,24 @@ export default function Home() {
   }, []);
 
   const handleToggleHideCompleted = useCallback(() => {
-    setHideCompleted(prev => {
-      const next = !prev;
-      if (next && expandedVideoId) {
-        const activeId = dataRef.current?.activePlaylistId;
-        if (activeId) {
-          const activeTasks = dataRef.current?.playlists[activeId]?.tasks || {};
-          if (activeTasks[expandedVideoId]?.completedAt) {
-            setExpandedVideoId(null);
-          }
+    const next = !hideCompleted;
+    setHideCompleted(next);
+
+    if (next && expandedVideoId) {
+      const activeId = dataRef.current?.activePlaylistId;
+      if (activeId) {
+        const activeTasks = dataRef.current?.playlists[activeId]?.tasks || {};
+        if (activeTasks[expandedVideoId]?.completedAt) {
+          setExpandedVideoId(null);
         }
       }
-      const currentData = dataRef.current;
-      if (currentData) {
-        const nextData: AppData = {
-          ...currentData,
-          userPreferences: {
-            ...currentData.userPreferences,
-            hideCompleted: next,
-          },
-        };
-        saveData(nextData);
-        setData(nextData);
-      }
-      return next;
-    });
-  }, [expandedVideoId]);
+    }
+
+    const currentData = dataRef.current || loadData();
+    const nextData = updateUserPreferences({ hideCompleted: next }, currentData);
+    dataRef.current = nextData;
+    setData(nextData);
+  }, [hideCompleted, expandedVideoId]);
 
   const handleSubtaskToggle = useCallback((videoId: string, subtaskId: string) => {
     const currentData = dataRef.current;

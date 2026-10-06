@@ -88,6 +88,42 @@ export const saveData = (data: AppData): void => {
   syncToCloud(data).catch(err => logger.warn('cloud-sync', 'Failed to push sync data to cloud', undefined, err));
 };
 
+/**
+ * Update user preferences (theme, hideCompleted, sidebarCollapsed) and persist to local and cloud storage.
+ */
+export const updateUserPreferences = (
+  preferences: Partial<AppData['userPreferences']>,
+  existingData?: AppData
+): AppData => {
+  const data = existingData ? JSON.parse(JSON.stringify(existingData)) : loadData();
+  data.userPreferences = {
+    theme: preferences?.theme ?? data.userPreferences?.theme ?? 'dark',
+    hideCompleted: preferences?.hideCompleted !== undefined
+      ? preferences.hideCompleted
+      : (data.userPreferences?.hideCompleted ?? false),
+    sidebarCollapsed: preferences?.sidebarCollapsed !== undefined
+      ? preferences.sidebarCollapsed
+      : (data.userPreferences?.sidebarCollapsed ?? false),
+  };
+  saveData(data);
+  logger.info('storage', 'Updated user preferences', { userPreferences: data.userPreferences });
+  return data;
+};
+
+/**
+ * Clear local user data from localStorage on sign-out
+ */
+export const clearUserData = (): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    logger.info('storage', 'Cleared local user data from storage');
+  } catch (err) {
+    logger.warn('storage', 'Failed to clear local user data', undefined, err);
+  }
+};
+
+
 // ── Playlist CRUD ──────────────────────────────────────────────────────────────
 
 export const addPlaylist = (name: string, youtubePlaylistId: string, videoCount?: number): AppData => {
